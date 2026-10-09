@@ -23,6 +23,7 @@ if [[ "$STORE_PASS" != "$STORE_PASS_CONFIRM" || ${#STORE_PASS} -lt 16 ]]; then
   echo "ERROR: passwords must match and be at least 16 characters." >&2
   exit 1
 fi
+export STORE_PASS
 read -r -p "Certificate owner name (e.g. Orubus): " OWNER
 read -r -p "Organization (e.g. Orubus): " ORG
 read -r -p "Two-letter country code: " COUNTRY
