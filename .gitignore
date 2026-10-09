@@ -3,5 +3,9 @@
 local.properties
 *.jks
 *.keystore
+*.base64
+orubus-release*
+.env
+.env.*
 .idea/
 .DS_Store
