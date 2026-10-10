@@ -4,11 +4,13 @@ User-visible changes for each release are recorded here.
 
 ## Unreleased
 
-- Added a documented repository layout and module ownership plan.
-- Added stable release signing and recovery procedures.
-- Added release process, security model, testing strategy and contribution guidance.
-- Added an explicit signed-release GitHub Actions workflow.
-- Added local keystore generation and signature verification scripts.
+- Replaced Android System WebView rendering with the bundled Chromium engine through Cefrium/CEF.
+- Added engine-backed browser tabs and off-the-record private tabs.
+- Replaced the small starter hostname filter with the engine-provided EasyList-based blocker.
+- Updated debug and stable-release CI toolchains for the bundled engine.
+- Added explicit engine maturity, license, security-update and release-readiness notes.
+- Retained honest limitations for named profiles, Tor, WireGuard, automatic routing and leak protection.
+- Added repository layout, stable signing, security, testing and contribution documentation.
 
 ## 0.1.0
 
