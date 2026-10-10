@@ -221,6 +221,46 @@ class MainActivity : Activity() {
             }
         }
 
+        browser.setDownloadHandler(object : CefriumBrowser.CefriumDownloadHandler {
+            override fun onBeforeDownload(
+                item: CefriumBrowser.DownloadItem,
+                callback: CefriumBrowser.BeforeDownloadCallback
+            ) {
+                val suggestedName = item.suggestedName?.takeIf { it.isNotBlank() } ?: "download"
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Download file?")
+                    .setMessage("$suggestedName\n\nFrom: ${item.url}")
+                    .setPositiveButton("Download") { _, _ ->
+                        val directory = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
+                        if (!directory.exists()) directory.mkdirs()
+                        val safeName = suggestedName.replace(Regex("[^A-Za-z0-9._ -]"), "_")
+                            .trim().take(120).ifBlank { "download" }
+                        var target = File(directory, safeName)
+                        var suffix = 1
+                        while (target.exists()) {
+                            val dot = safeName.lastIndexOf('.')
+                            val base = if (dot > 0) safeName.substring(0, dot) else safeName
+                            val ext = if (dot > 0) safeName.substring(dot) else ""
+                            target = File(directory, "$base ($suffix)$ext")
+                            suffix++
+                        }
+                        callback.allow(target.absolutePath)
+                    }
+                    .setNegativeButton("Cancel") { _, _ -> callback.cancel() }
+                    .setOnCancelListener { callback.cancel() }
+                    .show()
+            }
+
+            override fun onDownloadUpdated(item: CefriumBrowser.DownloadItem) {
+                runOnUiThread {
+                    downloads[item.id] = item
+                    if (item.isComplete) {
+                        Toast.makeText(this@MainActivity, "Downloaded: ${item.suggestedName}", Toast.LENGTH_LONG).show()
+                    }
+                    updateChrome()
+                }
+            }
+        })
         webContainer.addView(browser.surfaceContainer, FrameLayout.LayoutParams(-1, -1))
         activate(tab)
         browser.loadUrl(initialUrl)
@@ -281,6 +321,115 @@ class MainActivity : Activity() {
             activate(tabs.last())
         }
         updateChrome()
+    }
+
+    private fun toggleCurrentBookmark() {
+        val tab = activeTab() ?: return
+        if (tab.privateMode) {
+            Toast.makeText(this, "Bookmarks are disabled in private tabs to avoid persisting private URLs.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val url = tab.browser.url ?: return
+        if (!url.startsWith("https://") && !url.startsWith("http://")) {
+            Toast.makeText(this, "Only web pages can be bookmarked.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val saved = dataStore.toggleBookmark(tab.title, url)
+        Toast.makeText(this, if (saved) "Bookmark saved" else "Bookmark removed", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showBookmarks() {
+        val entries = dataStore.bookmarks()
+        if (entries.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("Bookmarks").setMessage("Your saved pages will appear here.")
+                .setPositiveButton("OK", null).show()
+            return
+        }
+        AlertDialog.Builder(this).setTitle("Bookmarks")
+            .setItems(entries.map { "${it.title}\n${it.url}" }.toTypedArray()) { _, which ->
+                navigate(entries[which].url)
+            }
+            .setPositiveButton("Done", null).show()
+    }
+
+    private fun showHistory() {
+        val entries = dataStore.history()
+        if (entries.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("History")
+                .setMessage("No normal browsing history has been saved. Private tabs are excluded.")
+                .setPositiveButton("OK", null).show()
+            return
+        }
+        AlertDialog.Builder(this).setTitle("History")
+            .setItems(entries.map { "${it.title}\n${it.url}" }.toTypedArray()) { _, which ->
+                navigate(entries[which].url)
+            }
+            .setNeutralButton("Clear history") { _, _ ->
+                AlertDialog.Builder(this).setTitle("Clear history?")
+                    .setMessage("This clears the saved history list. It does not clear website cookies or browser storage.")
+                    .setPositiveButton("Clear") { _, _ -> dataStore.clearHistory() }
+                    .setNegativeButton("Cancel", null).show()
+            }
+            .setNegativeButton("Done", null).show()
+    }
+
+    private fun showFind() {
+        val input = EditText(this).apply { hint = "Find text on this page"; singleLine = true }
+        AlertDialog.Builder(this).setTitle("Find in page").setView(input)
+            .setPositiveButton("Find") { _, _ ->
+                input.text.toString().takeIf { it.isNotBlank() }?.let { activeTab()?.browser?.find(it, true, false, false) }
+            }
+            .setNeutralButton("Next match") { _, _ ->
+                input.text.toString().takeIf { it.isNotBlank() }?.let { activeTab()?.browser?.find(it, true, false, true) }
+            }
+            .setNegativeButton("Stop") { _, _ -> activeTab()?.browser?.stopFinding(true) }.show()
+    }
+
+    private fun shareCurrentPage() {
+        val tab = activeTab() ?: return
+        val url = tab.browser.url ?: return
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, tab.title)
+            putExtra(Intent.EXTRA_TEXT, url)
+        }
+        startActivity(Intent.createChooser(intent, "Share page"))
+    }
+
+    private fun showDownloads() {
+        val items = downloads.values.toList().asReversed()
+        if (items.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("Downloads")
+                .setMessage("No downloads in this app session. Approved files are saved to the app-specific Downloads folder.")
+                .setPositiveButton("OK", null).show()
+            return
+        }
+        val labels = items.map { item ->
+            val state = when {
+                item.isComplete -> "Complete · ${item.fullPath}"
+                item.isCanceled -> "Canceled"
+                item.isPaused -> "Paused"
+                else -> "${item.percentComplete.coerceAtLeast(0)}% · ${item.receivedBytes} bytes"
+            }
+            "${item.suggestedName}\n$state"
+        }
+        AlertDialog.Builder(this).setTitle("Downloads")
+            .setItems(labels.toTypedArray()) { _, index ->
+                val item = items[index]
+                val options = when {
+                    item.isComplete || item.isCanceled -> arrayOf("Remove from list")
+                    item.isPaused -> arrayOf("Resume", "Cancel")
+                    else -> arrayOf("Pause", "Cancel")
+                }
+                AlertDialog.Builder(this).setTitle(item.suggestedName).setItems(options) { _, selected ->
+                    when {
+                        item.isComplete || item.isCanceled -> downloads.remove(item.id)
+                        item.isPaused && selected == 0 -> item.resume()
+                        !item.isPaused && selected == 0 -> item.pause()
+                        else -> item.cancel()
+                    }
+                }.setNegativeButton("Back", null).show()
+            }.setPositiveButton("Done", null).show()
     }
 
     private fun showPrivacy() {
