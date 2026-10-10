@@ -6,7 +6,7 @@ A privacy-focused Android browser built around a bundled Chromium engine, browse
 
 The app now integrates a prebuilt Chromium engine through Cefrium/CEF. It does not build Chromium from source and no longer uses Android System WebView for page rendering. The browser shell has address/search navigation, back/forward/reload/home controls, tabs, pull-to-refresh, in-page find, page sharing, engine-provided EasyList blocking, and private tabs backed by the engine's off-the-record context. Bookmarks and normal browsing history are stored locally; normal-tab URLs can be restored after restart. Private-tab URLs are excluded from browser-owned history and session restore. Downloads use the engine download API with user confirmation and in-session pause/resume/cancel controls.
 
-The current source now passes the GitHub Actions debug APK build and address-bar resolution unit tests. This verifies dependency resolution, Kotlin compilation, and APK packaging, but does not replace real-device testing. Cefrium is currently documented as a public-beta, pre-1.0 SDK, so Orubus must treat it as a candidate engine under validation rather than claim production readiness. See the engine decision in docs/ENGINE_DECISION.md and implementation status in ARCHITECTURE.md.
+The repository integrates the Guardian Project Tor Android daemon and a Tor control-state/SOCKS5 handshake verifier. The Tor control blanks existing pages, applies Chromium's fixed SOCKS5 proxy to each browser context, waits for an established Tor circuit, and blocks address-bar navigation when the transport is not verified. Tor browsing URLs are excluded from the app's own history and session restore. This is source-level integration pending a successful CI build and physical-device validation. Cefrium is currently documented as a public-beta, pre-1.0 SDK, so Orubus must treat it as a candidate engine under validation rather than claim production readiness. See the engine decision in docs/ENGINE_DECISION.md and implementation status in ARCHITECTURE.md.
 
 ## Principles
 
@@ -22,7 +22,7 @@ GitHub Actions builds the Android debug APK. The current bundled engine toolchai
 
 ## Current limitations
 
-Tor, WireGuard, automatic routing, fail-closed enforcement, named persistent profile isolation, and DNS/IPv6/WebRTC leak verification are not yet implemented. Do not use development builds as a guarantee of anonymity or leak protection.
+WireGuard, automatic route selection, OS-level VPN kill-switch enforcement, named persistent profile isolation, and DNS/IPv6/WebRTC leak verification are not implemented. Tor's browser proxy is not equivalent to a system-wide tunnel; Chromium proxy fallback and non-HTTP traffic must be tested before making a leak-protection claim. Do not use development builds as a guarantee of anonymity or leak protection.
 
 ## Third-party engine
 
