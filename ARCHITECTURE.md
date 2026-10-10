@@ -40,7 +40,7 @@ The engine increases app size and requires a modern Android toolchain. Current S
 
 ## WireGuard current behavior
 
-The WireGuard Android tunnel library is integrated in source. The UI accepts a pasted provider configuration, parses it using the upstream config parser, requires IPv4 and IPv6 default routes, rejects app-specific include/exclude routing, encrypts the config with AES-GCM using an Android Keystore key, requests Android VPN consent, and controls the userspace backend. See docs/WIREGUARD_INTEGRATION.md. The app does not provision VPN servers or credentials and does not silently enable Android Always-on VPN / Block connections without VPN. CI build validation and physical-device routing/leak tests remain required.
+The WireGuard Android tunnel library is integrated in source. The UI accepts a pasted provider configuration, parses it using the upstream config parser, requires IPv4 and IPv6 default routes plus an explicit DNS server, rejects app-specific include/exclude routing, encrypts the config with AES-GCM using an Android Keystore key, requests Android VPN consent, and controls the userspace backend. Browser navigation is paused while a requested WireGuard route is connecting or failed. See docs/WIREGUARD_INTEGRATION.md. The app does not provision VPN servers or credentials and does not silently enable Android Always-on VPN / Block connections without VPN. CI build validation and physical-device routing/leak tests remain required.
 
 ## Routing design target
 
