@@ -75,7 +75,7 @@ jobs:
           printf '%s' "$RELEASE_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/orubus-signing/orubus-release.jks"
           chmod 600 "$RUNNER_TEMP/orubus-signing/orubus-release.jks"
 
-      - name: Build signed APK and AAB
+      - name: Build signed split APKs and AAB
         env:
           ORUBUS_KEYSTORE_PATH: ${{ runner.temp }}/orubus-signing/orubus-release.jks
           ORUBUS_KEYSTORE_PASSWORD: ${{ secrets.ORUBUS_KEYSTORE_PASSWORD }}
@@ -83,10 +83,14 @@ jobs:
           ORUBUS_KEY_PASSWORD: ${{ secrets.ORUBUS_KEY_PASSWORD }}
         run: gradle --no-daemon clean test lint assembleRelease bundleRelease
 
-      - name: Verify APK signature
+      - name: Verify every APK signature
         run: |
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
-          "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f -print0 |
+            while IFS= read -r -d '' apk; do
+              echo "Verifying $apk"
+              "$APKSIGNER" verify --verbose --print-certs "$apk"
+            done
 
       - name: Generate SHA-256 checksums
         run: |
