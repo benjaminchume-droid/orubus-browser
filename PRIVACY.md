@@ -2,16 +2,24 @@
 
 ## Current behavior
 
-This project is an early development build. It uses Android System WebView and a small built-in host-based request filter. The app requires internet access to load web pages. It does not currently implement Tor, WireGuard, a verified VPN kill switch, true isolated profiles, or a comprehensive ad/tracker filtering engine.
+Orubus uses a bundled Chromium engine through Cefrium/CEF rather than Android System WebView. The app requires internet access to load web pages. The engine provides an EasyList-based network ad/tracker blocker. This does not guarantee that all ads or trackers are blocked, and it is not DNS-level filtering or anti-fingerprinting protection.
 
-The initial browser shell does not intentionally send browsing history to an Orubus-operated backend. Websites visited by the user may receive the network requests and information inherent to normal web browsing. Search requests are sent to the search provider selected in the current code.
+Private tabs use the engine's off-the-record context. The engine documents that private tabs share an off-the-record session and that its in-memory cookies, history and cache are cleared when the last private browser is closed. This is not the same as named persistent profile isolation, and private browsing does not hide traffic from internet providers, network administrators or destination websites.
 
-## Local data
+Tor, WireGuard, automatic routing, verified fail-closed enforcement, and DNS/IPv6/WebRTC leak protection are not currently implemented.
 
-WebView may store cookies, cache, DOM storage and site data. Current tabs share the app's WebView storage context. Do not treat tabs as separate identities or private profiles. A complete retention/deletion interface has not yet been implemented.
+## Network and local data
+
+Websites visited by the user receive the network requests and information inherent to normal web browsing. Search terms entered without a URL are sent to the search provider configured in the current application code.
+
+Normal browser tabs use the engine's normal browsing context. Named persistent profiles with independently verified storage separation and a full data-retention/deletion interface have not been implemented. Do not treat normal tabs as isolated identities.
+
+## Engine supply chain
+
+The app packages the Cefrium SDK and its Chromium/CEF components. The engine is pinned as a Gradle dependency. This means Orubus must track engine security releases and deliberately update and validate the dependency. The SDK is currently pre-1.0/public beta, so compatibility and production suitability remain under evaluation.
 
 ## Future privacy requirements
 
-Before a public production release, document each data type, its storage location, retention duration, deletion behavior, any telemetry, network endpoints and third-party services. Use privacy-preserving defaults, collect the minimum data needed, and do not claim that traffic is anonymized unless the full routing behavior has been independently tested.
+Before a public stable release, document each data type, storage location, retention duration, deletion behavior, network endpoint and third-party service. Do not claim traffic is anonymized unless the complete routing behavior has been implemented and independently tested.
 
 This document describes the current repository state, not legal advice. Review it whenever application behavior or data flows change.
