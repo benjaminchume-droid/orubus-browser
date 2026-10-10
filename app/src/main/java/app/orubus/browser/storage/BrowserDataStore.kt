@@ -61,7 +61,7 @@ class BrowserDataStore(context: Context) {
     @Synchronized
     fun saveSession(urls: List<String>) {
         val array = JSONArray()
-        urls.filter(::isRestorableUrl).distinct().take(MAX_TABS).forEach(array::put)
+        urls.filter(::isRestorableUrl).distinct().take(MAX_TABS).forEach { array.put(it) }
         preferences.edit().putString(KEY_SESSION, array.toString()).apply()
     }
 
