@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.os.Handler
+import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import org.torproject.jni.TorService
@@ -96,7 +97,7 @@ class TorTransportController(
                     addAction(TorService.ACTION_STATUS)
                     addAction(TorService.ACTION_ERROR)
                 }
-                appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                registerStatusReceiver(filter)
                 receiverRegistered = true
             }
             val intent = Intent(appContext, TorService::class.java).setAction(TorService.ACTION_START)
@@ -140,6 +141,15 @@ class TorTransportController(
     fun close() {
         stop()
         executor.shutdownNow()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun registerStatusReceiver(filter: IntentFilter) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            appContext.registerReceiver(receiver, filter)
+        }
     }
 
     private fun writeTorConfiguration() {
