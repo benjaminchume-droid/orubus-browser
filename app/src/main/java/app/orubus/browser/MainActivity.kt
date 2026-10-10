@@ -6,7 +6,7 @@ import android.os.Environment
 import java.io.File
 import app.orubus.browser.navigation.UrlResolver
 import app.orubus.browser.storage.BrowserDataStore
-import app.orubus.browser.network.TorTransportController
+import app.orubus.browser.network.TorTransportController\nimport app.orubus.browser.network.WireGuardTransportController
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
@@ -35,7 +35,7 @@ class MainActivity : Activity() {
     private val ink = Color.rgb(31, 31, 37)
     private val dataStore by lazy { BrowserDataStore(applicationContext) }
     private val downloads = linkedMapOf<Int, CefriumBrowser.DownloadItem>()
-    private lateinit var torController: TorTransportController
+    private lateinit var torController: TorTransportController\n    private lateinit var wireGuardController: WireGuardTransportController\n    private var wireGuardState = WireGuardTransportController.State.OFF\n    private var wireGuardPendingPermission = false
     private var torState = TorTransportController.State.OFF
     private var torRequested = false
     private val torPendingUrls = linkedMapOf<Int, String>()
@@ -56,7 +56,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var blockCount: TextView
     private lateinit var tabButton: Button
-    private lateinit var torButton: Button
+    private lateinit var torButton: Button\n    private lateinit var wireGuardButton: Button
     private lateinit var activeTabLabel: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,7 +69,7 @@ class MainActivity : Activity() {
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         }
         buildUi()
-        torController = TorTransportController(this) { state -> runOnUiThread { if (!isFinishing && !isDestroyed) handleTorState(state) } }
+        torController = TorTransportController(this) { state -> runOnUiThread { if (!isFinishing && !isDestroyed) handleTorState(state) } }\n        wireGuardController = WireGuardTransportController(this) { state, message ->\n            runOnUiThread {\n                if (!isFinishing && !isDestroyed) {\n                    wireGuardState = state\n                    updateRoutingBadge()\n                    updateChrome()\n                    if (state == WireGuardTransportController.State.FAILED) {\n                        Toast.makeText(this, message ?: wireGuardController.error ?: "WireGuard failed.", Toast.LENGTH_LONG).show()\n                    } else if (state == WireGuardTransportController.State.CONNECTED) {\n                        Toast.makeText(this, "WireGuard tunnel is active. Verify your provider route and Android VPN lockdown settings.", Toast.LENGTH_LONG).show()\n                    }\n                }\n            }\n        }\n        wireGuardState = if (wireGuardController.hasSavedConfig()) WireGuardTransportController.State.CONFIGURED else WireGuardTransportController.State.OFF
         val restored = dataStore.restoreSession()
         if (restored.isEmpty()) createTab("https://duckduckgo.com/", privateMode = false)
         else restored.forEach { createTab(it, privateMode = false) }
@@ -562,7 +562,7 @@ class MainActivity : Activity() {
             }.setPositiveButton("Done", null).show()
     }
 
-    private fun showPrivacy() {
+    private fun showWireGuardMenu() {\n        when (wireGuardState) {\n            WireGuardTransportController.State.CONNECTED -> {\n                AlertDialog.Builder(this).setTitle("WireGuard connected")\n                    .setMessage("The WireGuard userspace tunnel is active. Disconnecting may return device traffic to the normal network unless Android Always-on VPN lockdown is enabled.")\n                    .setPositiveButton("Disconnect") { _, _ -> wireGuardController.stop() }\n                    .setNegativeButton("Cancel", null).show()\n            }\n            WireGuardTransportController.State.CONNECTING, WireGuardTransportController.State.STOPPING ->\n                Toast.makeText(this, "WireGuard is changing state. Wait for it to finish.", Toast.LENGTH_SHORT).show()\n            else -> {\n                if (wireGuardController.hasSavedConfig()) {\n                    AlertDialog.Builder(this).setTitle("WireGuard")\n                        .setItems(arrayOf("Connect", "Edit configuration", "Remove saved configuration")) { _, which ->\n                            when (which) {\n                                0 -> requestWireGuardStart()\n                                1 -> showWireGuardConfigDialog()\n                                2 -> AlertDialog.Builder(this).setTitle("Remove configuration?")\n                                    .setMessage("The encrypted local configuration, including its private key, will be deleted.")\n                                    .setPositiveButton("Remove") { _, _ -> runCatching { wireGuardController.removeConfig() }\n                                        .onFailure { Toast.makeText(this, it.message ?: "Could not remove config", Toast.LENGTH_LONG).show() }\n                                    }.setNegativeButton("Cancel", null).show()\n                            }\n                        }.setNegativeButton("Cancel", null).show()\n                } else showWireGuardConfigDialog()\n            }\n        }\n    }\n\n    private fun showWireGuardConfigDialog() {\n        val input = EditText(this).apply {\n            hint = "Paste full-tunnel WireGuard config ([Interface] and [Peer])"\n            setTextIsSelectable(true)\n            gravity = Gravity.TOP or Gravity.START\n            minLines = 12\n            maxLines = 20\n            inputType = android.text.InputType.TYPE_CLASS_TEXT or\n                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or\n                android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS\n            setTextColor(ink)\n        }\n        val scroller = android.widget.ScrollView(this).apply {\n            setPadding(dp(16), dp(8), dp(16), dp(8))\n            addView(input)\n        }\n        AlertDialog.Builder(this).setTitle("Import WireGuard configuration")\n            .setMessage("Paste a provider-generated .conf. The config is validated for IPv4 + IPv6 default routes and encrypted with Android Keystore before it is saved locally. Never paste a config into a public chat.")\n            .setView(scroller)\n            .setPositiveButton("Validate and save", null)\n            .setNegativeButton("Cancel", null)\n            .create().also { dialog ->\n                dialog.setOnShowListener {\n                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {\n                        try {\n                            wireGuardController.saveConfig(input.text.toString())\n                            wireGuardState = WireGuardTransportController.State.CONFIGURED\n                            updateRoutingBadge()\n                            dialog.dismiss()\n                            requestWireGuardStart()\n                        } catch (e: Exception) {\n                            Toast.makeText(this, e.message ?: "Invalid WireGuard configuration", Toast.LENGTH_LONG).show()\n                        }\n                    }\n                }\n                dialog.show()\n            }\n    }\n\n    private fun requestWireGuardStart() {\n        val consent = wireGuardController.permissionIntent()\n        if (consent != null) {\n            wireGuardPendingPermission = true\n            @Suppress("DEPRECATION")\n            startActivityForResult(consent, REQUEST_WIREGUARD_PERMISSION)\n        } else wireGuardController.start()\n    }\n\n    private fun showPrivacy() {
         val blocked = tabs.sumOf { it.browser.blockedCount }
         AlertDialog.Builder(this)
             .setTitle("Privacy status")
@@ -604,7 +604,7 @@ class MainActivity : Activity() {
         } ?: "No active tab"
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()\n\n    companion object {\n        private const val REQUEST_WIREGUARD_PERMISSION = 4813\n    }
 
     @Deprecated("Deprecated in Android; retained for browser back navigation")
     override fun onBackPressed() {
