@@ -213,7 +213,7 @@ class MainActivity : Activity() {
 
     private fun createTab(initialUrl: String, privateMode: Boolean) {
         val browser = CefriumBrowser.createWithSurface(this, privateMode)
-        if (torRequested && !browser.setProxy(torProxy)) torState = TorTransportController.State.FAILED
+        if (torRequested && !browser.setProxy(CefriumBrowser.PROXY_FIXED, torProxy)) torState = TorTransportController.State.FAILED
         browser.setPullToRefreshEnabled(true)
         val tab = BrowserTab(nextTabId++, browser, privateMode)
         tabs.add(tab)
@@ -328,7 +328,7 @@ class MainActivity : Activity() {
         var proxyApplied = true
         tabs.forEach { tab ->
             tab.browser.loadUrl("about:blank")
-            if (!tab.browser.setProxy(torProxy)) proxyApplied = false
+            if (!tab.browser.setProxy(CefriumBrowser.PROXY_FIXED, torProxy)) proxyApplied = false
             tab.browser.loadUrl("about:blank")
         }
         if (!proxyApplied) {
@@ -349,7 +349,7 @@ class MainActivity : Activity() {
         tabs.forEach { it.browser.loadUrl("about:blank") }
         val cleared = tabs.all { it.browser.clearProxy() }
         if (!cleared) {
-            val restored = tabs.all { it.browser.setProxy(torProxy) }
+            val restored = tabs.all { it.browser.setProxy(CefriumBrowser.PROXY_FIXED, torProxy) }
             torState = if (restored) torController.state else TorTransportController.State.FAILED
             updateRoutingBadge()
             Toast.makeText(this, "Could not switch every tab to Direct. Pages remain closed.", Toast.LENGTH_LONG).show()
@@ -375,7 +375,7 @@ class MainActivity : Activity() {
         torState = state
         when (state) {
             TorTransportController.State.CONNECTED -> {
-                val proxiesApplied = tabs.all { it.browser.setProxy(torProxy) }
+                val proxiesApplied = tabs.all { it.browser.setProxy(CefriumBrowser.PROXY_FIXED, torProxy) }
                 if (!proxiesApplied) {
                     torState = TorTransportController.State.FAILED
                     tabs.forEach { it.browser.loadUrl("about:blank") }
