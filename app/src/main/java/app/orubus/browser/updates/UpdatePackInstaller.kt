@@ -89,7 +89,20 @@ class UpdatePackInstaller(context: Context) {
         }
     }
 
-    private fun sha256File(file: File): String {\n        val digest = MessageDigest.getInstance("SHA-256")\n        file.inputStream().buffered().use { input ->\n            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)\n            while (true) {\n                val read = input.read(buffer)\n                if (read < 0) break\n                digest.update(buffer, 0, read)\n            }\n        }\n        return digest.digest().joinToString("") { "%02x".format(it) }\n    }\n\n    private fun extractSafely(archive: File, destination: File, maxExpandedBytes: Long) {
+    private fun sha256File(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun extractSafely(archive: File, destination: File, maxExpandedBytes: Long) {
         var expanded = 0L
         var entries = 0
         ZipInputStream(BufferedInputStream(archive.inputStream())).use { zip ->
