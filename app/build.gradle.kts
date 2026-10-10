@@ -17,6 +17,7 @@ val releaseSigningReady = listOf(
 android {
     namespace = "app.orubus.browser"
     compileSdk = 37
+    compileSdkMinor = 1
 
     defaultConfig {
         applicationId = "app.orubus.browser"
