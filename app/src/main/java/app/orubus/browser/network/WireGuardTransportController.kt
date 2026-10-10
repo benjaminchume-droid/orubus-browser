@@ -129,7 +129,7 @@ class WireGuardTransportController(
                 // GoBackend owns the process-level tunnel service. A fresh backend
                 // instance can stop its own active tunnel only when it owns that state;
                 // the singleton backend below keeps tunnel ownership stable.
-                val backend = backendInstance ?: GoBackend(appContext).also { backendInstance = it }
+                val backend = getBackend()
                 if (backend.getState(tunnel) == Tunnel.State.UP) {
                     backend.setState(tunnel, Tunnel.State.DOWN, null)
                 }
@@ -205,7 +205,7 @@ class WireGuardTransportController(
         return generator.generateKey()
     }
 
-    private fun fail(message: String) {
+    private fun getBackend(): GoBackend = synchronized(Companion) {\n        backendInstance ?: GoBackend(appContext).also { backendInstance = it }\n    }\n\n    private fun handleBackendState(newState: Tunnel.State) {\n        when (newState) {\n            Tunnel.State.UP -> transition(State.CONNECTED)\n            Tunnel.State.DOWN -> if (currentState != State.STOPPING) transition(\n                if (hasSavedConfig()) State.CONFIGURED else State.OFF\n            )\n            Tunnel.State.TOGGLE -> Unit\n        }\n    }\n\n    private fun fail(message: String) {
         lastError = message
         transition(State.FAILED, message)
     }
@@ -222,6 +222,6 @@ class WireGuardTransportController(
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val MAX_CONFIG_CHARS = 64 * 1024
-        @Volatile private var backendInstance: GoBackend? = null
+        @Volatile private var backendInstance: GoBackend? = null\n        @Volatile private var sharedTunnel: Tunnel? = null\n        @Volatile private var activeController: WireGuardTransportController? = null
     }
 }
