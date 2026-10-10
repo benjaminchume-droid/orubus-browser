@@ -18,11 +18,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * WireGuard userspace tunnel controller.
- *
- * Configurations are accepted only when they provide IPv4 and IPv6 default routes
- * and do not restrict routing to selected applications. This is intentionally a
- * full-tunnel browser-device policy, not a split-tunnel profile manager.
+ * WireGuard userspace tunnel controller. Only full-tunnel configurations covering
+ * IPv4 and IPv6 are accepted. App-specific include/exclude routing is rejected.
  */
 class WireGuardTransportController(
     context: Context,
@@ -34,20 +31,27 @@ class WireGuardTransportController(
     private val worker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "orubus-wireguard").apply { isDaemon = true }
     }
+    private val configFile = File(appContext.filesDir, CONFIG_FILE)
     @Volatile private var currentState = if (hasSavedConfig()) State.CONFIGURED else State.OFF
     @Volatile private var closed = false
     @Volatile private var lastError: String? = null
-    private val configFile = File(appContext.filesDir, CONFIG_FILE)
-    private val tunnel = object : Tunnel {
-        override fun getName(): String = TUNNEL_NAME
-        override fun onStateChange(newState: Tunnel.State) {
-            when (newState) {
-                Tunnel.State.UP -> transition(State.CONNECTED)
-                Tunnel.State.DOWN -> if (currentState != State.STOPPING) transition(
-                    if (hasSavedConfig()) State.CONFIGURED else State.OFF
-                )
-                Tunnel.State.TOGGLE -> Unit
+    private val tunnel: Tunnel
+        get() = sharedTunnel ?: error("WireGuard tunnel has not been initialized")
+
+    init {
+        synchronized(Companion) {
+            activeController = this
+            if (sharedTunnel == null) {
+                sharedTunnel = object : Tunnel {
+                    override fun getName(): String = TUNNEL_NAME
+                    override fun onStateChange(newState: Tunnel.State) {
+                        activeController?.handleBackendState(newState)
+                    }
+                }
             }
+            if (backendInstance != null && sharedTunnel != null &&
+                backendInstance!!.getState(sharedTunnel!!) == Tunnel.State.UP
+            ) currentState = State.CONNECTED
         }
     }
 
@@ -55,17 +59,15 @@ class WireGuardTransportController(
     val error: String? get() = lastError
     fun hasSavedConfig(): Boolean = configFile.exists() && configFile.length() > 0
 
-    /** Returns Android's consent Intent when VPN permission has not yet been granted. */
+    /** Returns Android's VPN-consent Intent if the user has not approved this app. */
     fun permissionIntent(): Intent? = VpnService.prepare(appContext)
 
-    /** Validates a full-tunnel config before encrypting and storing it in app-private storage. */
+    /** Validate first, then encrypt the complete config using an Android Keystore AES key. */
     @Synchronized
     fun saveConfig(text: String) {
         require(text.isNotBlank()) { "Paste a WireGuard configuration first." }
         require(text.length <= MAX_CONFIG_CHARS) { "Configuration is unexpectedly large." }
-        val config = parseAndValidate(text)
-        // Parsing validates syntax and route policy before secrets are written.
-        require(config.peers.isNotEmpty()) { "The configuration must contain at least one peer." }
+        parseAndValidate(text)
         val encrypted = encrypt(text.toByteArray(Charsets.UTF_8))
         val temporary = File(appContext.filesDir, "$CONFIG_FILE.tmp")
         temporary.writeBytes(encrypted)
@@ -83,8 +85,8 @@ class WireGuardTransportController(
 
     @Synchronized
     fun removeConfig() {
-        if (currentState == State.CONNECTED || currentState == State.CONNECTING) {
-            error("Disconnect WireGuard before removing its configuration.")
+        require(currentState != State.CONNECTED && currentState != State.CONNECTING) {
+            "Disconnect WireGuard before removing its configuration."
         }
         if (configFile.exists() && !configFile.delete()) {
             error("Could not remove the saved WireGuard configuration.")
@@ -108,10 +110,10 @@ class WireGuardTransportController(
             try {
                 val plaintext = decrypt(configFile.readBytes()).toString(Charsets.UTF_8)
                 val config = parseAndValidate(plaintext)
-                val backend = GoBackend(appContext)
+                val backend = getBackend()
                 backend.setState(tunnel, Tunnel.State.UP, config)
-                if (backend.getState(tunnel) != Tunnel.State.UP) {
-                    throw IllegalStateException("WireGuard backend did not report the tunnel as up.")
+                check(backend.getState(tunnel) == Tunnel.State.UP) {
+                    "WireGuard backend did not report the tunnel as up."
                 }
                 lastError = null
                 transition(State.CONNECTED)
@@ -126,9 +128,6 @@ class WireGuardTransportController(
         transition(State.STOPPING)
         worker.execute {
             try {
-                // GoBackend owns the process-level tunnel service. A fresh backend
-                // instance can stop its own active tunnel only when it owns that state;
-                // the singleton backend below keeps tunnel ownership stable.
                 val backend = getBackend()
                 if (backend.getState(tunnel) == Tunnel.State.UP) {
                     backend.setState(tunnel, Tunnel.State.DOWN, null)
@@ -143,16 +142,20 @@ class WireGuardTransportController(
 
     fun close() {
         closed = true
-        // Do not silently disconnect a user-requested VPN when the Activity is recreated.
-        // The OS VPN service owns the live tunnel after activation.
+        synchronized(Companion) {
+            if (activeController === this) activeController = null
+        }
+        // Do not disconnect a user-requested VPN just because the Activity is recreated.
         worker.shutdown()
     }
 
     private fun parseAndValidate(text: String): Config {
         val config = Config.parse(ByteArrayInputStream(text.toByteArray(Charsets.UTF_8)))
-        require(config.peers.isNotEmpty()) { "The configuration needs at least one [Peer] section." }
-        require(config.interface.includedApplications.isEmpty() &&
-            config.interface.excludedApplications.isEmpty()) {
+        require(config.peers.isNotEmpty()) {
+            "The configuration needs at least one [Peer] section."
+        }
+        val iface = config.getInterface()
+        require(iface.includedApplications.isEmpty() && iface.excludedApplications.isEmpty()) {
             "Application-specific routing is not accepted. Remove IncludedApplications and ExcludedApplications."
         }
         val hasIpv4Default = config.peers.any { peer ->
@@ -162,17 +165,30 @@ class WireGuardTransportController(
             peer.allowedIps.any { it.mask == 0 && it.address.address.size == 16 }
         }
         require(hasIpv4Default && hasIpv6Default) {
-            "For leak-resistant full-tunnel routing, every address family must be covered: add AllowedIPs = 0.0.0.0/0, ::/0 to a peer."
+            "Full-tunnel policy requires AllowedIPs = 0.0.0.0/0, ::/0 on a peer to cover IPv4 and IPv6."
         }
         return config
+    }
+
+    private fun getBackend(): GoBackend = synchronized(Companion) {
+        backendInstance ?: GoBackend(appContext).also { backendInstance = it }
+    }
+
+    private fun handleBackendState(newState: Tunnel.State) {
+        when (newState) {
+            Tunnel.State.UP -> transition(State.CONNECTED)
+            Tunnel.State.DOWN -> if (currentState != State.STOPPING) {
+                transition(if (hasSavedConfig()) State.CONFIGURED else State.OFF)
+            }
+            Tunnel.State.TOGGLE -> Unit
+        }
     }
 
     private fun encrypt(plaintext: ByteArray): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val iv = cipher.iv
-        val ciphertext = cipher.doFinal(plaintext)
-        return byteArrayOf(iv.size.toByte()) + iv + ciphertext
+        return byteArrayOf(iv.size.toByte()) + iv + cipher.doFinal(plaintext)
     }
 
     private fun decrypt(payload: ByteArray): ByteArray {
@@ -205,7 +221,7 @@ class WireGuardTransportController(
         return generator.generateKey()
     }
 
-    private fun getBackend(): GoBackend = synchronized(Companion) {\n        backendInstance ?: GoBackend(appContext).also { backendInstance = it }\n    }\n\n    private fun handleBackendState(newState: Tunnel.State) {\n        when (newState) {\n            Tunnel.State.UP -> transition(State.CONNECTED)\n            Tunnel.State.DOWN -> if (currentState != State.STOPPING) transition(\n                if (hasSavedConfig()) State.CONFIGURED else State.OFF\n            )\n            Tunnel.State.TOGGLE -> Unit\n        }\n    }\n\n    private fun fail(message: String) {
+    private fun fail(message: String) {
         lastError = message
         transition(State.FAILED, message)
     }
@@ -222,6 +238,8 @@ class WireGuardTransportController(
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val MAX_CONFIG_CHARS = 64 * 1024
-        @Volatile private var backendInstance: GoBackend? = null\n        @Volatile private var sharedTunnel: Tunnel? = null\n        @Volatile private var activeController: WireGuardTransportController? = null
+        @Volatile private var backendInstance: GoBackend? = null
+        @Volatile private var sharedTunnel: Tunnel? = null
+        @Volatile private var activeController: WireGuardTransportController? = null
     }
 }
