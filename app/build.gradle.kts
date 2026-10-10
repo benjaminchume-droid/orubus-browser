@@ -54,14 +54,14 @@ android {
     }
 }
 
+configurations.configureEach {
+    exclude(group = "com.google.guava", module = "listenablefuture")
+}
+
 dependencies {
     implementation("com.cefrium:cefrium-sdk:0.9.4")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("androidx.core:core:1.16.0")
     implementation("androidx.browser:browser:1.8.0")
-
-    configurations.configureEach {
-        exclude(group = "com.google.guava", module = "listenablefuture")
-    }
 }
