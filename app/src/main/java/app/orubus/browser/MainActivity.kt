@@ -617,18 +617,15 @@ class MainActivity : Activity() {
             else -> {
                 if (wireGuardController.hasSavedConfig()) {
                     AlertDialog.Builder(this).setTitle("WireGuard")
-                        .setItems(if (wireGuardRequested) arrayOf("Connect / retry", "Edit configuration", "Remove saved configuration", "Disable WireGuard routing and use the remaining route") else arrayOf("Connect", "Edit configuration", "Remove saved configuration")) { _, which ->
+                        .setItems(if (wireGuardRequested) arrayOf("Connect / retry", "Edit configuration", "Disable WireGuard routing and use the remaining route") else arrayOf("Connect", "Edit configuration", "Remove saved configuration")) { _, which ->
                             when (which) {
                                 0 -> requestWireGuardStart()
                                 1 -> showWireGuardConfigDialog()
-                                2 -> AlertDialog.Builder(this).setTitle("Remove configuration?")
+                                2 -> if (wireGuardRequested) disableWireGuardRouting() else AlertDialog.Builder(this).setTitle("Remove configuration?")
                                     .setMessage("The encrypted local configuration, including its private key, will be deleted.")
-                                    .setPositiveButton("Remove") { _, _ ->
-                                        if (wireGuardRequested) disableWireGuardRouting()
-                                        else runCatching { wireGuardController.removeConfig() }
-                                            .onFailure { Toast.makeText(this, it.message ?: "Could not remove config", Toast.LENGTH_LONG).show() }
+                                    .setPositiveButton("Remove") { _, _ -> runCatching { wireGuardController.removeConfig() }
+                                        .onFailure { Toast.makeText(this, it.message ?: "Could not remove config", Toast.LENGTH_LONG).show() }
                                     }.setNegativeButton("Cancel", null).show()
-                                3 -> disableWireGuardRouting()
                             }
                         }.setNegativeButton("Cancel", null).show()
                 } else showWireGuardConfigDialog()
