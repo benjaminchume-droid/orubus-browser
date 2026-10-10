@@ -16,6 +16,7 @@ import java.net.Socket
 import java.nio.charset.StandardCharsets
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.HttpsURLConnection
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -245,13 +246,16 @@ class TorTransportController(
             tls.use { secure ->
                 secure.soTimeout = EXIT_CHECK_TIMEOUT_MS
                 secure.startHandshake()
+                if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, secure.session)) return false
                 val request = "GET /api/ip HTTP/1.0\r\n" +
                     "Host: $host\r\nConnection: close\r\nUser-Agent: OrubusTorVerifier/1\r\n\r\n"
                 secure.getOutputStream().write(request.toByteArray(StandardCharsets.US_ASCII))
                 secure.getOutputStream().flush()
                 val response = secure.getInputStream().bufferedReader(StandardCharsets.UTF_8).readText()
+                val statusLine = response.lineSequence().firstOrNull().orEmpty()
+                if (!statusLine.matches(Regex("HTTP/1\\.[01] 200(?: .*)?"))) return false
                 val body = response.substringAfter("\r\n\r\n", "")
-                Regex("\\\"IsTor\\\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(body)
+                Regex("\"IsTor\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(body)
             }
         }
     } catch (_: Exception) {
