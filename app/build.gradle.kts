@@ -1,6 +1,6 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    id("com.cefrium")
 }
 
 val releaseKeystorePath = System.getenv("ORUBUS_KEYSTORE_PATH")
@@ -16,14 +16,14 @@ val releaseSigningReady = listOf(
 
 android {
     namespace = "app.orubus.browser"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "app.orubus.browser"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        minSdk = 29
+        targetSdk = 37
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     if (releaseSigningReady) {
@@ -41,12 +41,27 @@ android {
         debug { applicationIdSuffix = ".debug" }
         release {
             isMinifyEnabled = false
-            // Signed only when the release job provides all four ORUBUS_* environment values.
             if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
     }
 
-    kotlinOptions { jvmTarget = "17" }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+}
+
+dependencies {
+    implementation("com.cefrium:cefrium-sdk:0.9.4")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("androidx.core:core:1.16.0")
+    implementation("androidx.browser:browser:1.8.0")
+
+    configurations.configureEach {
+        exclude(group = "com.google.guava", module = "listenablefuture")
+    }
 }
