@@ -5,11 +5,11 @@
 Orubus embeds the official WireGuard Android tunnel library (userspace WireGuard backend). The app can accept a provider-generated WireGuard configuration, validate it, store it encrypted in app-private storage, request Android's VPN consent, and bring the tunnel up or down through the library backend.
 
 - Configuration parsing uses the WireGuard library's Config.parse implementation. Invalid configs are rejected before storage.
-- Routing policy requires at least one peer and IPv4 plus IPv6 default routes (0.0.0.0/0 and ::/0).
+- Routing policy requires at least one peer, IPv4 plus IPv6 default routes (0.0.0.0/0 and ::/0), and an explicit DNS server.
 - IncludedApplications and ExcludedApplications routing directives are rejected to avoid accidental app-level bypass.
 - Configuration bytes are encrypted using AES-GCM with a 256-bit key managed by Android Keystore. The plaintext config is not written to a regular file.
 - The tunnel uses Android's VpnService consent flow. The library contributes its GoBackend.VpnService through Android manifest merging.
-- UI states are based on backend lifecycle callbacks, not a simulated connection indicator.
+- UI states are based on backend lifecycle callbacks, not a simulated connection indicator. Browser pages are paused and address-bar navigation is blocked while a requested WireGuard route is connecting or failed.
 - The Tor browser proxy and WireGuard system VPN can be enabled together. With a full-device WireGuard config, Tor daemon traffic is expected to traverse the WireGuard tunnel; this composition still needs device-level route verification.
 
 ## User setup
