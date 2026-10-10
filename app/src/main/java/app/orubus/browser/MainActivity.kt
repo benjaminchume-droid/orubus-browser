@@ -570,11 +570,13 @@ class MainActivity : Activity() {
                 "Browser engine: bundled Chromium via Cefrium\n" +
                     "Ad/tracker blocking: engine-provided EasyList blocker\n" +
                     "Blocked requests reported by open tabs: $blocked\n" +
-                    "Network route: Direct\n\n" +
+                    "Network route: " + (if (torRequested) torState.name else "Direct") + "\n" +
+                    "Tor transport: embedded Tor daemon; Tor circuit state and local SOCKS5 handshake are checked.\n\n" +
+                    "When Tor is requested, navigation waits for an established circuit. On failure, pages are blanked and navigation is blocked rather than deliberately selecting Direct. This is not proof against every Chromium proxy fallback, DNS, IPv6, WebRTC, or process-level leak.\n\n" +
                     "Private tabs use the engine's off-the-record context and are intended to clear " +
                     "their in-memory browsing state when the last private tab closes. They do not hide " +
-                    "traffic from your network provider or guarantee anonymity. Tor, WireGuard, " +
-                    "automatic route enforcement and leak verification are not implemented yet."
+                    "traffic from your network provider or guarantee anonymity. WireGuard, OS-level " +
+                    "kill-switch enforcement, and end-to-end leak verification remain unimplemented."
             )
             .setPositiveButton("OK", null)
             .show()
