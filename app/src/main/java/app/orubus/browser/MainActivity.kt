@@ -69,7 +69,7 @@ class MainActivity : Activity() {
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         }
         buildUi()
-        torController = TorTransportController(this) { state -> runOnUiThread { handleTorState(state) } }
+        torController = TorTransportController(this) { state -> runOnUiThread { if (!isFinishing && !isDestroyed) handleTorState(state) } }
         val restored = dataStore.restoreSession()
         if (restored.isEmpty()) createTab("https://duckduckgo.com/", privateMode = false)
         else restored.forEach { createTab(it, privateMode = false) }
