@@ -403,7 +403,7 @@ class MainActivity : Activity() {
     private fun updateRoutingBadge() {
         status.text = when {
             !torRequested -> "DIRECT"
-            torState == TorTransportController.State.CONNECTED -> "TOR · CIRCUIT UP"
+            torState == TorTransportController.State.CONNECTED -> "TOR · EXIT VERIFIED"
             torState == TorTransportController.State.STARTING -> "TOR · CONNECTING"
             torState == TorTransportController.State.STOPPING -> "TOR · STOPPING"
             else -> "TOR · FAILED"
@@ -571,7 +571,7 @@ class MainActivity : Activity() {
                     "Ad/tracker blocking: engine-provided EasyList blocker\n" +
                     "Blocked requests reported by open tabs: $blocked\n" +
                     "Network route: " + (if (torRequested) torState.name else "Direct") + "\n" +
-                    "Tor transport: embedded Tor daemon; Tor circuit state and local SOCKS5 handshake are checked.\n\n" +
+                    "Tor transport: embedded Tor daemon; circuit state, local SOCKS5 handshake, and a TLS request to Tor Project's exit-check API through SOCKS must succeed.\n\n" +
                     "When Tor is requested, navigation waits for an established circuit. On failure, pages are blanked and navigation is blocked rather than deliberately selecting Direct. This is not proof against every Chromium proxy fallback, DNS, IPv6, WebRTC, or process-level leak.\n\n" +
                     "Private tabs use the engine's off-the-record context and are intended to clear " +
                     "their in-memory browsing state when the last private tab closes. They do not hide " +
