@@ -8,43 +8,33 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import java.io.ByteArrayInputStream
+import com.cefrium.CefriumBrowser
 import java.net.URLEncoder
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Initial browser shell. WebView uses the device's Chromium-derived WebView package;
- * this is not yet a custom, bundled Chromium build.
- *
- * The request filter below performs real host-based blocking for the included starter
- * rules. It is not yet a complete EasyList/uBlock-compatible filtering engine.
+ * Orubus browser shell backed by a bundled Chromium engine through Cefrium/CEF.
+ * Cefrium is currently pre-1.0, so stable release requires additional device and
+ * security verification plus an explicit upstream engine update process.
  */
 class MainActivity : Activity() {
     private val cosmic = Color.rgb(35, 33, 44)
     private val vanilla = Color.rgb(241, 254, 203)
     private val ink = Color.rgb(31, 31, 37)
-    private val blockedRequests = AtomicInteger(0)
-    private val blockedHosts = setOf(
-        "doubleclick.net", "googlesyndication.com", "googleadservices.com",
-        "adnxs.com", "adsrvr.org", "adservice.google.com",
-        "connect.facebook.net", "scorecardresearch.com", "hotjar.com",
-        "segment.io", "mixpanel.com"
+
+    private data class BrowserTab(
+        val id: Int,
+        val browser: CefriumBrowser,
+        val privateMode: Boolean,
+        var title: String = "New tab"
     )
 
-    private data class BrowserTab(val id: Int, val webView: WebView, var title: String = "New tab")
     private val tabs = mutableListOf<BrowserTab>()
     private var nextTabId = 1
     private lateinit var root: LinearLayout
@@ -59,10 +49,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = vanilla
         window.navigationBarColor = vanilla
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
-            View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        @Suppress("DEPRECATION")
+        run {
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
         buildUi()
-        createTab("https://www.google.com")
+        createTab("https://www.google.com", privateMode = false)
     }
 
     private fun buildUi() {
@@ -109,36 +102,35 @@ class MainActivity : Activity() {
             setHintTextColor(Color.GRAY)
             setBackgroundColor(Color.TRANSPARENT)
             imeOptions = EditorInfo.IME_ACTION_GO
-            setSelectAllOnFocus(false)
             setOnEditorActionListener { _, actionId, event ->
                 if (actionId == EditorInfo.IME_ACTION_GO ||
-                    event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
-                    navigate(address.text.toString()); true
+                    event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER
+                ) {
+                    navigate(address.text.toString())
+                    true
                 } else false
             }
         }
-        val go = button("Go") { navigate(address.text.toString()) }
         addressRow.addView(address, LinearLayout.LayoutParams(0, dp(48), 1f))
-        addressRow.addView(go, LinearLayout.LayoutParams(dp(52), dp(38)))
-        val addressParams = LinearLayout.LayoutParams(-1, dp(52))
-        addressParams.topMargin = dp(8)
-        root.addView(addressRow, addressParams)
+        addressRow.addView(button("Go") { navigate(address.text.toString()) },
+            LinearLayout.LayoutParams(dp(52), dp(38)))
+        root.addView(addressRow, LinearLayout.LayoutParams(-1, dp(52)).apply {
+            topMargin = dp(8)
+        })
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         tabButton = button("Tabs · 0") { showTabs() }
-        val newTab = button("+") { createTab("about:blank") }
-        val privacy = button("Privacy") { showPrivacy() }
-        val profile = button("Profiles") { showProfileStatus() }
         actions.addView(tabButton)
-        actions.addView(newTab)
-        actions.addView(privacy)
-        actions.addView(profile)
-        val actionParams = LinearLayout.LayoutParams(-1, dp(46))
-        actionParams.topMargin = dp(5)
-        root.addView(actions, actionParams)
+        actions.addView(button("+") { createTab("about:blank", privateMode = false) })
+        actions.addView(button("Private") { createTab("about:blank", privateMode = true) })
+        actions.addView(button("Privacy") { showPrivacy() })
+        actions.addView(button("Profiles") { showProfileStatus() })
+        root.addView(actions, LinearLayout.LayoutParams(-1, dp(46)).apply {
+            topMargin = dp(5)
+        })
 
         webContainer = FrameLayout(this).apply {
             background = rounded(Color.WHITE, 22, Color.TRANSPARENT)
@@ -187,68 +179,43 @@ class MainActivity : Activity() {
             if (stroke != Color.TRANSPARENT) setStroke(dp(1), stroke)
         }
 
-    private fun createTab(initialUrl: String) {
-        val web = WebView(this)
-        web.settings.javaScriptEnabled = true
-        web.settings.domStorageEnabled = true
-        web.settings.javaScriptCanOpenWindowsAutomatically = false
-        web.settings.setSupportMultipleWindows(false)
-        web.webChromeClient = object : WebChromeClient() {
-            override fun onReceivedTitle(view: WebView?, title: String?) {
-                tabs.firstOrNull { it.webView === view }?.let { it.title = title ?: "Untitled" }
-                updateChrome()
-            }
-        }
-        web.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val uri = request?.url ?: return false
-                if (uri.scheme !in setOf("http", "https", "about")) {
-                    Toast.makeText(this@MainActivity, "This link type is not opened by the browser.", Toast.LENGTH_SHORT).show()
-                    return true
-                }
-                return false
-            }
-
-            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                val host = request?.url?.host?.lowercase() ?: return null
-                if (blockedHosts.any { host == it || host.endsWith(".$it") }) {
-                    blockedRequests.incrementAndGet()
-                    runOnUiThread { blockCount.text = "Blocked: ${blockedRequests.get()}" }
-                    return WebResourceResponse(
-                        "text/plain", "utf-8", 204, "Blocked by Orubus privacy filter",
-                        mapOf("Cache-Control" to "no-store"),
-                        ByteArrayInputStream(ByteArray(0))
-                    )
-                }
-                return null
-            }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                address.setText(url ?: "")
-                activeTabLabel.text = "Loading…"
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                address.setText(url ?: "")
-                updateChrome()
-            }
-        }
-        val tab = BrowserTab(nextTabId++, web)
+    private fun createTab(initialUrl: String, privateMode: Boolean) {
+        val browser = CefriumBrowser.createWithSurface(this, privateMode)
+        val tab = BrowserTab(nextTabId++, browser, privateMode)
         tabs.add(tab)
-        webContainer.addView(web, FrameLayout.LayoutParams(-1, -1))
+
+        browser.setOnUrlChangedListener { url ->
+            runOnUiThread {
+                if (activeTab()?.id == tab.id) address.setText(url ?: "")
+            }
+        }
+        browser.setOnTitleChangedListener { title ->
+            runOnUiThread {
+                tab.title = title?.takeIf { it.isNotBlank() } ?: "Untitled"
+                updateChrome()
+            }
+        }
+
+        webContainer.addView(browser.surfaceContainer, FrameLayout.LayoutParams(-1, -1))
         activate(tab)
-        navigate(initialUrl)
+        browser.loadUrl(initialUrl)
         updateChrome()
     }
 
     private fun activate(tab: BrowserTab) {
-        tabs.forEach { it.webView.visibility = if (it.id == tab.id) View.VISIBLE else View.GONE }
-        tab.webView.bringToFront()
-        address.setText(tab.webView.url ?: "")
+        tabs.forEach {
+            it.browser.surfaceContainer.visibility =
+                if (it.id == tab.id) View.VISIBLE else View.GONE
+            it.browser.setPageVisible(it.id == tab.id)
+        }
+        tab.browser.surfaceContainer.bringToFront()
+        address.setText(tab.browser.url ?: "")
+        status.text = if (tab.privateMode) "PRIVATE · DIRECT" else "DIRECT"
         updateChrome()
     }
 
-    private fun activeTab(): BrowserTab? = tabs.firstOrNull { it.webView.visibility == View.VISIBLE }
+    private fun activeTab(): BrowserTab? =
+        tabs.firstOrNull { it.browser.surfaceContainer.visibility == View.VISIBLE }
 
     private fun navigate(raw: String) {
         val value = raw.trim()
@@ -259,50 +226,63 @@ class MainActivity : Activity() {
             value.contains(".") && !value.contains(" ") -> "https://$value"
             else -> "https://www.google.com/search?q=" + URLEncoder.encode(value, "UTF-8")
         }
-        if (!target.startsWith("https://") && !target.startsWith("http://") && !target.startsWith("about:")) {
+        if (!target.startsWith("https://") && !target.startsWith("http://") &&
+            !target.startsWith("about:")
+        ) {
             Toast.makeText(this, "Only web and about: URLs are supported.", Toast.LENGTH_SHORT).show()
             return
         }
-        activeTab()?.webView?.loadUrl(target)
+        activeTab()?.browser?.loadUrl(target)
     }
 
     private fun showTabs() {
         if (tabs.isEmpty()) return
-        val labels = tabs.mapIndexed { index, tab -> "${index + 1}. ${tab.title}" }.toMutableList()
+        val labels = tabs.mapIndexed { index, tab ->
+            val privacyLabel = if (tab.privateMode) " · Private" else ""
+            "${index + 1}. ${tab.title}$privacyLabel"
+        }.toMutableList()
         labels.add("＋ New tab")
+        labels.add("＋ New private tab")
         AlertDialog.Builder(this)
             .setTitle("Tabs (${tabs.size})")
             .setItems(labels.toTypedArray()) { _, which ->
-                if (which == tabs.size) createTab("about:blank")
-                else activate(tabs[which])
-            }
-            .setNeutralButton("Close active tab") { _, _ ->
-                if (tabs.size > 1) {
-                    val current = activeTab()
-                    current?.let {
-                        tabs.remove(it)
-                        webContainer.removeView(it.webView)
-                        it.webView.destroy()
-                    }
-                    activate(tabs.last())
-                    updateChrome()
-                } else {
-                    activeTab()?.webView?.loadUrl("about:blank")
+                when {
+                    which < tabs.size -> activate(tabs[which])
+                    which == tabs.size -> createTab("about:blank", privateMode = false)
+                    else -> createTab("about:blank", privateMode = true)
                 }
             }
+            .setNeutralButton("Close active tab") { _, _ -> closeActiveTab() }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
+    private fun closeActiveTab() {
+        val current = activeTab() ?: return
+        tabs.remove(current)
+        webContainer.removeView(current.browser.surfaceContainer)
+        current.browser.close()
+        if (tabs.isEmpty()) {
+            createTab("about:blank", privateMode = false)
+        } else {
+            activate(tabs.last())
+        }
+        updateChrome()
+    }
+
     private fun showPrivacy() {
+        val blocked = tabs.sumOf { it.browser.blockedCount }
         AlertDialog.Builder(this)
             .setTitle("Privacy status")
             .setMessage(
-                "Network route: Direct\n" +
-                "Blocked requests: ${blockedRequests.get()}\n\n" +
-                "The starter filter blocks requests to a small built-in list of known ad/tracker hosts. " +
-                "This is not yet a comprehensive filter-list engine. VPN, Tor, DNS leak protection, " +
-                "and verified route enforcement are not implemented in this build."
+                "Browser engine: bundled Chromium via Cefrium\n" +
+                    "Ad/tracker blocking: engine-provided EasyList blocker\n" +
+                    "Blocked requests reported by open tabs: $blocked\n" +
+                    "Network route: Direct\n\n" +
+                    "Private tabs use the engine's off-the-record context and are intended to clear " +
+                    "their in-memory browsing state when the last private tab closes. They do not hide " +
+                    "traffic from your network provider or guarantee anonymity. Tor, WireGuard, " +
+                    "automatic route enforcement and leak verification are not implemented yet."
             )
             .setPositiveButton("OK", null)
             .show()
@@ -312,9 +292,9 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Browser profiles")
             .setMessage(
-                "Profile isolation is planned but not enabled in this initial build. Tabs currently share " +
-                "the app's WebView storage context. The profile selector will not claim isolation until " +
-                "separate browser storage contexts and isolation tests are implemented."
+                "Private browsing is backed by the engine's off-the-record mode. Named persistent " +
+                    "profiles with independent cookies, storage, permissions, cache, and download state " +
+                    "are not implemented yet. Normal tabs must not be treated as separate profiles."
             )
             .setPositiveButton("Understood", null)
             .show()
@@ -322,19 +302,41 @@ class MainActivity : Activity() {
 
     private fun updateChrome() {
         tabButton.text = "Tabs · ${tabs.size}"
-        blockCount.text = "Blocked: ${blockedRequests.get()}"
-        activeTabLabel.text = activeTab()?.title ?: "No active tab"
+        blockCount.text = "Blocked: ${tabs.sumOf { it.browser.blockedCount }}"
+        val tab = activeTab()
+        activeTabLabel.text = tab?.let {
+            (if (it.privateMode) "Private · " else "") + it.title
+        } ?: "No active tab"
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    @Deprecated("Deprecated in Android; retained for browser back navigation")
     override fun onBackPressed() {
-        val web = activeTab()?.webView
-        if (web?.canGoBack() == true) web.goBack() else super.onBackPressed()
+        val browser = activeTab()?.browser
+        if (browser?.canGoBack() == true) browser.goBack() else super.onBackPressed()
+    }
+
+    override fun onPause() {
+        tabs.forEach { it.browser.onPause() }
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        tabs.forEach { it.browser.onResume() }
+    }
+
+    @Deprecated("Deprecated in Android; required by browser engine activity integration")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        if (data != null) tabs.forEach {
+            it.browser.onActivityResult(requestCode, resultCode, data)
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onDestroy() {
-        tabs.forEach { it.webView.stopLoading(); it.webView.destroy() }
+        tabs.forEach { it.browser.close() }
         tabs.clear()
         super.onDestroy()
     }
