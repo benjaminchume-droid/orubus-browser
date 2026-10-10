@@ -17,7 +17,7 @@ This document defines the intended ownership boundaries for the Android browser.
 │       ├── main/
 │       │   ├── AndroidManifest.xml
 │       │   ├── java/app/orubus/browser/
-│       │   │   ├── MainActivity.kt      # Current bootstrap UI; keep thin
+│       │   │   ├── MainActivity.kt      # Browser shell and engine lifecycle
 │       │   │   ├── app/                 # Application lifecycle and dependency wiring
 │       │   │   ├── browser/             # Tabs, navigation, sessions and browser contracts
 │       │   │   ├── profiles/            # Profile lifecycle and storage isolation
@@ -29,10 +29,10 @@ This document defines the intended ownership boundaries for the Android browser.
 │       │   │   ├── bookmarks/           # Bookmark model and repository
 │       │   │   ├── history/             # Local history and retention policy
 │       │   │   ├── settings/            # Typed settings and migrations
-│       │   │   ├── storage/             # Persistence interfaces and implementations
+│       │   │   ├── navigation/          # Address-bar URL/search resolution (implemented)\n│       │   │   ├── storage/             # BrowserDataStore: bookmarks, history, normal-tab session
 │       │   │   └── ui/                  # Screens, components, theme and design tokens
 │       │   └── res/
-│       ├── test/                        # JVM unit tests
+│       ├── test/                        # JVM unit tests, including UrlResolver tests
 │       ├── androidTest/                 # Instrumented Android tests
 │       └── benchmark/                   # Performance and startup benchmarks
 ├── docs/
