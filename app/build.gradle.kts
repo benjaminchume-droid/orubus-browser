@@ -26,6 +26,17 @@ android {
         versionName = "0.2.0"
     }
 
+    // Ship only the native Chromium engine for the target CPU architecture.
+    // A universal APK duplicates large CEF binaries for ARM64 and x86_64.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     if (releaseSigningReady) {
         signingConfigs {
             create("release") {
@@ -40,6 +51,8 @@ android {
     buildTypes {
         debug { applicationIdSuffix = ".debug" }
         release {
+            // Keep shrinking off until Cefrium/CEF JNI and reflection requirements
+            // are verified with release-mode device tests.
             isMinifyEnabled = false
             if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("release")
