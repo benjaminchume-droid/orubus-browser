@@ -684,12 +684,11 @@ class MainActivity : Activity() {
                     "Ad/tracker blocking: engine-provided EasyList blocker\n" +
                     "Blocked requests reported by open tabs: $blocked\n" +
                     "Network route: " + (if (torRequested) torState.name else "Direct") + "\n" +
+                    "WireGuard: " + wireGuardState.name + "\n" +
                     "Tor transport: embedded Tor daemon; circuit state, local SOCKS5 handshake, and a TLS request to Tor Project's exit-check API through SOCKS must succeed.\n\n" +
+                    "WireGuard uses the official WireGuard Android tunnel library. Configurations are validated for IPv4 and IPv6 default routes and stored encrypted using Android Keystore. Android VPN consent is required.\n\n" +
                     "When Tor is requested, navigation waits for an established circuit. On failure, pages are blanked and navigation is blocked rather than deliberately selecting Direct. This is not proof against every Chromium proxy fallback, DNS, IPv6, WebRTC, or process-level leak.\n\n" +
-                    "Private tabs use the engine's off-the-record context and are intended to clear " +
-                    "their in-memory browsing state when the last private tab closes. They do not hide " +
-                    "traffic from your network provider or guarantee anonymity. WireGuard, OS-level " +
-                    "kill-switch enforcement, and end-to-end leak verification remain unimplemented."
+                    "Android Always-on VPN and Block connections without VPN must be enabled separately in system settings for OS-level lockdown. DNS, IPv6, WebRTC, reconnect, and physical-device leak tests remain required. Private tabs do not hide traffic from your network provider or guarantee anonymity."
             )
             .setPositiveButton("OK", null)
             .show()
@@ -718,10 +717,6 @@ class MainActivity : Activity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    companion object {
-        private const val REQUEST_WIREGUARD_PERMISSION = 4813
-    }
 
     companion object {
         private const val REQUEST_WIREGUARD_PERMISSION = 4813
@@ -759,6 +754,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         if (::torController.isInitialized) torController.close()
+        if (::wireGuardController.isInitialized) wireGuardController.close()
         tabs.forEach { it.browser.close() }
         tabs.clear()
         super.onDestroy()
