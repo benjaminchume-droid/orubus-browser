@@ -306,6 +306,8 @@ class MainActivity : Activity() {
         })
         webContainer.addView(browser.surfaceContainer, FrameLayout.LayoutParams(-1, -1))
         activate(tab)
+        if (torRequested && torState != TorTransportController.State.CONNECTED) torPendingUrls[tab.id] = initialUrl
+        if (wireGuardRequested && wireGuardState != WireGuardTransportController.State.CONNECTED) wireGuardPendingUrls[tab.id] = initialUrl
         browser.loadUrl(if ((torRequested && torState != TorTransportController.State.CONNECTED) || (wireGuardRequested && wireGuardState != WireGuardTransportController.State.CONNECTED)) "about:blank" else initialUrl)
         updateChrome()
     }
@@ -636,7 +638,6 @@ class MainActivity : Activity() {
     private fun showWireGuardConfigDialog() {
         val input = EditText(this).apply {
             hint = "Paste full-tunnel WireGuard config ([Interface] and [Peer])"
-            setTextIsSelectable(true)
             gravity = Gravity.TOP or Gravity.START
             minLines = 12
             maxLines = 20
@@ -706,7 +707,9 @@ class MainActivity : Activity() {
     private fun resumeProtectedTabs() {
         if (!canResumeProtectedTabs()) return
         tabs.forEach { tab ->
-            val url = wireGuardPendingUrls.remove(tab.id) ?: torPendingUrls.remove(tab.id)
+            val wireGuardUrl = wireGuardPendingUrls.remove(tab.id)
+            val torUrl = torPendingUrls.remove(tab.id)
+            val url = wireGuardUrl ?: torUrl
             if (!url.isNullOrBlank()) tab.browser.loadUrl(url)
         }
     }
