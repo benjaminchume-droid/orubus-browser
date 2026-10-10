@@ -73,6 +73,8 @@ configurations.configureEach {
 
 dependencies {
     implementation("com.cefrium:cefrium-sdk:0.9.4")
+    implementation("info.guardianproject:tor-android:0.4.9.12")
+    implementation("info.guardianproject:jtorctl:0.4.5.7")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("androidx.core:core:1.16.0")
