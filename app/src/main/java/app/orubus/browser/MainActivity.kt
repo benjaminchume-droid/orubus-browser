@@ -301,8 +301,8 @@ class MainActivity : Activity() {
             .setItems(labels.toTypedArray()) { _, which ->
                 when {
                     which < tabs.size -> activate(tabs[which])
-                    which == tabs.size -> createTab("about:blank", privateMode = false)
-                    else -> createTab("about:blank", privateMode = true)
+                    which == tabs.size -> createTab("https://duckduckgo.com/", privateMode = false)
+                    else -> createTab("https://duckduckgo.com/", privateMode = true)
                 }
             }
             .setNeutralButton("Close active tab") { _, _ -> closeActiveTab() }
@@ -476,7 +476,7 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android; retained for browser back navigation")
     override fun onBackPressed() {
         val browser = activeTab()?.browser
-        if (browser?.canGoBack() == true) browser.goBack() else super.onBackPressed()
+        if (browser?.canGoBack() == true) browser.goBack() else if (tabs.size > 1) closeActiveTab() else super.onBackPressed()
     }
 
     override fun onPause() {
