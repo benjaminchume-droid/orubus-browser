@@ -175,6 +175,8 @@ class MainActivity : Activity() {
         actions.addView(button("Share") { shareCurrentPage() })
         torButton = button("Tor: Off") { toggleTor() }
         actions.addView(torButton)
+        wireGuardButton = button("WireGuard: Setup") { showWireGuardMenu() }
+        actions.addView(wireGuardButton)
         actions.addView(button("Privacy") { showPrivacy() })
         val actionScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -422,16 +424,30 @@ class MainActivity : Activity() {
 
     private fun updateRoutingBadge() {
         status.text = when {
-            !torRequested -> "DIRECT"
-            torState == TorTransportController.State.CONNECTED -> "TOR · EXIT VERIFIED"
-            torState == TorTransportController.State.STARTING -> "TOR · CONNECTING"
-            torState == TorTransportController.State.STOPPING -> "TOR · STOPPING"
-            else -> "TOR · FAILED"
+            torRequested && torState == TorTransportController.State.CONNECTED && wireGuardState == WireGuardTransportController.State.CONNECTED -> "TOR + WG"
+            wireGuardState == WireGuardTransportController.State.CONNECTED && torRequested && torState != TorTransportController.State.CONNECTED -> "WG · TOR WAITING"
+            wireGuardState == WireGuardTransportController.State.CONNECTED -> "WIREGUARD"
+            torRequested && torState == TorTransportController.State.CONNECTED -> "TOR · EXIT VERIFIED"
+            torRequested && torState == TorTransportController.State.STARTING -> "TOR · CONNECTING"
+            torRequested && torState == TorTransportController.State.STOPPING -> "TOR · STOPPING"
+            torRequested -> "TOR · FAILED"
+            wireGuardState == WireGuardTransportController.State.CONNECTING -> "WG · CONNECTING"
+            wireGuardState == WireGuardTransportController.State.STOPPING -> "WG · STOPPING"
+            wireGuardState == WireGuardTransportController.State.FAILED -> "WG · FAILED"
+            else -> "DIRECT"
         }
         torButton.text = when {
             !torRequested -> "Tor: Off"
             torState == TorTransportController.State.CONNECTED -> "Tor: On"
             else -> "Tor: Retry"
+        }
+        wireGuardButton.text = when (wireGuardState) {
+            WireGuardTransportController.State.CONNECTED -> "WireGuard: On"
+            WireGuardTransportController.State.CONNECTING -> "WireGuard: Connecting"
+            WireGuardTransportController.State.STOPPING -> "WireGuard: Stopping"
+            WireGuardTransportController.State.CONFIGURED -> "WireGuard: Connect"
+            WireGuardTransportController.State.FAILED -> "WireGuard: Retry"
+            WireGuardTransportController.State.OFF -> "WireGuard: Setup"
         }
     }
 
@@ -707,6 +723,10 @@ class MainActivity : Activity() {
         private const val REQUEST_WIREGUARD_PERMISSION = 4813
     }
 
+    companion object {
+        private const val REQUEST_WIREGUARD_PERMISSION = 4813
+    }
+
     @Deprecated("Deprecated in Android; retained for browser back navigation")
     override fun onBackPressed() {
         val browser = activeTab()?.browser
@@ -726,6 +746,11 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Android; required by browser engine activity integration")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        if (requestCode == REQUEST_WIREGUARD_PERMISSION && wireGuardPendingPermission) {
+            wireGuardPendingPermission = false
+            if (resultCode == RESULT_OK) wireGuardController.start()
+            else Toast.makeText(this, "WireGuard requires Android VPN permission to connect.", Toast.LENGTH_LONG).show()
+        }
         if (data != null) tabs.forEach {
             it.browser.onActivityResult(requestCode, resultCode, data)
         }
