@@ -8,6 +8,11 @@ Status labels are evidence-based. A planned component is not considered implemen
 - [x] GitHub Actions debug APK workflow updated for the bundled engine toolchain
 - [x] Bundled Chromium engine integrated through the Cefrium/CEF Android SDK
 - [x] Address/search navigation and browser tabs using the bundled engine
+- [x] Back/forward/reload/home controls and pull-to-refresh
+- [x] Local persistent bookmarks and bounded normal browsing history
+- [x] Normal-tab URL session restoration; private-tab URLs are excluded
+- [x] In-page find, page sharing, download confirmation/progress and pause/resume/cancel controls
+- [x] Unit tests for address-bar resolution and dangerous scheme rejection
 - [x] Engine-provided EasyList ad/tracker blocking and per-tab blocked-request counts
 - [x] Off-the-record private tabs through the engine's incognito request context
 - [x] Honest privacy status for features that remain unimplemented
@@ -21,7 +26,7 @@ Status labels are evidence-based. A planned component is not considered implemen
 - [ ] Fail-closed behavior across tunnel start, crash, network switch and recovery
 - [ ] DNS, IPv6, WebRTC and tunnel-failure leak testing
 - [ ] Filtering audit, list-update pipeline and regression test corpus
-- [ ] Downloads manager, bookmarks, persistent history and session restore
+- [ ] Device validation of downloads, bookmarks, history and session restoration
 - [ ] Production security review, supported-device matrix and release verification
 
 ## Engine strategy
