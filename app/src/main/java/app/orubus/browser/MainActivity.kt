@@ -106,7 +106,7 @@ class MainActivity : Activity() {
         address = EditText(this).apply {
             hint = "Search or enter address"
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
             setTextColor(ink)
             setHintTextColor(Color.GRAY)
             setBackgroundColor(Color.TRANSPARENT)
@@ -132,7 +132,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         actions.addView(button("Back") { activeTab()?.browser?.let { if (it.canGoBack()) it.goBack() } })
-        actions.addView(button("Forward") { activeTab()?.browser?.let { if (it.canGoForward()) it.goForward() } })
+        actions.addView(button("Forward") { activeTab()?.browser?.goForward() })
         actions.addView(button("Reload") { activeTab()?.browser?.reload() })
         actions.addView(button("Home") { navigate("https://duckduckgo.com/") })
         tabButton = button("Tabs · 0") { showTabs() }
@@ -374,7 +374,7 @@ class MainActivity : Activity() {
     }
 
     private fun showFind() {
-        val input = EditText(this).apply { hint = "Find text on this page"; singleLine = true }
+        val input = EditText(this).apply { hint = "Find text on this page"; setSingleLine(true) }
         AlertDialog.Builder(this).setTitle("Find in page").setView(input)
             .setPositiveButton("Find") { _, _ ->
                 input.text.toString().takeIf { it.isNotBlank() }?.let { activeTab()?.browser?.find(it, true, false, false) }
