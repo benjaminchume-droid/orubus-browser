@@ -37,6 +37,7 @@ This document defines the intended ownership boundaries for the Android browser.
 │       └── benchmark/                   # Performance and startup benchmarks
 ├── docs/
 │   ├── ARCHITECTURE.md
+│   ├── ENGINE_DECISION.md
 │   ├── FILE_STRUCTURE.md
 │   ├── RELEASE_PROCESS.md
 │   ├── RELEASE_SIGNING.md
