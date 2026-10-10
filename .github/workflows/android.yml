@@ -16,33 +16,34 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '25'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '9.7.1'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-37" "build-tools;37.0.0"
 
-      - name: Verify source formatting and project files
+      - name: Verify source layout and prevent WebView regression
         run: |
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/app/orubus/browser/MainActivity.kt
           test -f app/build.gradle.kts
+          ! grep -R "android.webkit.WebView" app/src/main/java
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
@@ -50,7 +51,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: orubus-browser-debug-apk
+          name: orubus-browser-chromium-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
