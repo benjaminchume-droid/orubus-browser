@@ -242,7 +242,7 @@ class TorTransportController(
             }
             if (input.read() < 0 || input.read() < 0) return false // bound port
 
-            val tls = SSLSocketFactory.getDefault().createSocket(raw, host, 443, true) as SSLSocket
+            val tls = (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(raw, host, 443, true) as SSLSocket
             tls.use { secure ->
                 secure.soTimeout = EXIT_CHECK_TIMEOUT_MS
                 secure.startHandshake()
