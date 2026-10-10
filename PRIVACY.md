@@ -6,7 +6,7 @@ Orubus uses a bundled Chromium engine through Cefrium/CEF rather than Android Sy
 
 Private tabs use the engine's off-the-record context. The engine documents that private tabs share an off-the-record session and that its in-memory cookies, history and cache are cleared when the last private browser is closed. This is not the same as named persistent profile isolation, and private browsing does not hide traffic from internet providers, network administrators or destination websites.
 
-Tor, WireGuard, automatic routing, verified fail-closed enforcement, and DNS/IPv6/WebRTC leak protection are not currently implemented.
+Tor is integrated as an embedded Tor daemon with a fixed local SOCKS5 proxy. The app observes Tor's circuit-established status and verifies a local SOCKS5 handshake before resuming pages. While Tor is requested but not verified, address-bar navigation is blocked; if the controller reports failure, active pages are blanked and Tor URLs are not saved to browser-owned history/session restore. This is not a system-wide VPN or proven kill switch. WireGuard, automatic routing, Chromium proxy-fallback verification, and DNS/IPv6/WebRTC leak protection are not currently implemented.
 
 ## Network and local data
 
