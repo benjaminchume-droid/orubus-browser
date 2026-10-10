@@ -6,7 +6,7 @@ A privacy-focused Android browser built around a bundled Chromium engine, browse
 
 The app now integrates a prebuilt Chromium engine through Cefrium/CEF. It does not build Chromium from source and no longer uses Android System WebView for page rendering. The browser shell has address/search navigation, back/forward/reload/home controls, tabs, pull-to-refresh, in-page find, page sharing, engine-provided EasyList blocking, and private tabs backed by the engine's off-the-record context. Bookmarks and normal browsing history are stored locally; normal-tab URLs can be restored after restart. Private-tab URLs are excluded from browser-owned history and session restore. Downloads use the engine download API with user confirmation and in-session pause/resume/cancel controls.
 
-The engine integration has not yet been verified by a successful CI run and supported-device testing. Cefrium is currently documented as a public-beta, pre-1.0 SDK, so Orubus must treat it as a candidate engine under validation rather than claim production readiness. See the engine decision in docs/ENGINE_DECISION.md and implementation status in ARCHITECTURE.md.
+The current source now passes the GitHub Actions debug APK build and address-bar resolution unit tests. This verifies dependency resolution, Kotlin compilation, and APK packaging, but does not replace real-device testing. Cefrium is currently documented as a public-beta, pre-1.0 SDK, so Orubus must treat it as a candidate engine under validation rather than claim production readiness. See the engine decision in docs/ENGINE_DECISION.md and implementation status in ARCHITECTURE.md.
 
 ## Principles
 
