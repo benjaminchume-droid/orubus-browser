@@ -6,6 +6,7 @@ import android.os.Environment
 import java.io.File
 import app.orubus.browser.navigation.UrlResolver
 import app.orubus.browser.storage.BrowserDataStore
+import app.orubus.browser.network.TorTransportController
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
@@ -34,6 +35,11 @@ class MainActivity : Activity() {
     private val ink = Color.rgb(31, 31, 37)
     private val dataStore by lazy { BrowserDataStore(applicationContext) }
     private val downloads = linkedMapOf<Int, CefriumBrowser.DownloadItem>()
+    private lateinit var torController: TorTransportController
+    private var torState = TorTransportController.State.OFF
+    private var torRequested = false
+    private val torPendingUrls = linkedMapOf<Int, String>()
+    private val torProxy = "socks5://127.0.0.1:" + TorTransportController.SOCKS_PORT
 
     private data class BrowserTab(
         val id: Int,
@@ -50,6 +56,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var blockCount: TextView
     private lateinit var tabButton: Button
+    private lateinit var torButton: Button
     private lateinit var activeTabLabel: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +69,7 @@ class MainActivity : Activity() {
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         }
         buildUi()
+        torController = TorTransportController(this) { state -> runOnUiThread { handleTorState(state) } }
         val restored = dataStore.restoreSession()
         if (restored.isEmpty()) createTab("https://duckduckgo.com/", privateMode = false)
         else restored.forEach { createTab(it, privateMode = false) }
@@ -145,6 +153,8 @@ class MainActivity : Activity() {
         actions.addView(button("Files") { showDownloads() })
         actions.addView(button("Find") { showFind() })
         actions.addView(button("Share") { shareCurrentPage() })
+        torButton = button("Tor: Off") { toggleTor() }
+        actions.addView(torButton)
         actions.addView(button("Privacy") { showPrivacy() })
         val actionScroll = android.widget.HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -203,6 +213,7 @@ class MainActivity : Activity() {
 
     private fun createTab(initialUrl: String, privateMode: Boolean) {
         val browser = CefriumBrowser.createWithSurface(this, privateMode)
+        if (torRequested && !browser.setProxy(torProxy)) torState = TorTransportController.State.FAILED
         browser.setPullToRefreshEnabled(true)
         val tab = BrowserTab(nextTabId++, browser, privateMode)
         tabs.add(tab)
@@ -210,13 +221,13 @@ class MainActivity : Activity() {
         browser.setOnUrlChangedListener { url ->
             runOnUiThread {
                 if (activeTab()?.id == tab.id) address.setText(url ?: "")
-                if (!tab.privateMode && !url.isNullOrBlank()) dataStore.recordVisit(tab.title, url)
+                if (!tab.privateMode && !torRequested && !url.isNullOrBlank()) dataStore.recordVisit(tab.title, url)
             }
         }
         browser.setOnTitleChangedListener { title ->
             runOnUiThread {
                 tab.title = title?.takeIf { it.isNotBlank() } ?: "Untitled"
-                if (!tab.privateMode) tab.browser.url?.let { dataStore.recordVisit(tab.title, it) }
+                if (!tab.privateMode && !torRequested) tab.browser.url?.let { dataStore.recordVisit(tab.title, it) }
                 updateChrome()
             }
         }
@@ -263,7 +274,7 @@ class MainActivity : Activity() {
         })
         webContainer.addView(browser.surfaceContainer, FrameLayout.LayoutParams(-1, -1))
         activate(tab)
-        browser.loadUrl(initialUrl)
+        browser.loadUrl(if (torRequested && torState != TorTransportController.State.CONNECTED) "about:blank" else initialUrl)
         updateChrome()
     }
 
@@ -275,7 +286,7 @@ class MainActivity : Activity() {
         }
         tab.browser.surfaceContainer.bringToFront()
         address.setText(tab.browser.url ?: "")
-        status.text = if (tab.privateMode) "PRIVATE · DIRECT" else "DIRECT"
+        updateRoutingBadge()
         updateChrome()
     }
 
@@ -284,9 +295,128 @@ class MainActivity : Activity() {
 
     private fun navigate(raw: String) {
         val target = UrlResolver.resolve(raw) ?: return
+        if (torRequested && torState != TorTransportController.State.CONNECTED) {
+            Toast.makeText(this, "Tor is not connected. Navigation is blocked.", Toast.LENGTH_LONG).show()
+            return
+        }
         activeTab()?.browser?.loadUrl(target)
         address.clearFocus()
     }
+
+    private fun toggleTor() {
+        when {
+            !torRequested -> enableTor()
+            torState == TorTransportController.State.CONNECTED -> disableTor()
+            else -> retryTor()
+        }
+    }
+
+    private fun enableTor() {
+        torRequested = true
+        tabs.forEach { tab ->
+            tab.browser.url?.takeIf(::isWebUrl)?.let { torPendingUrls[tab.id] = it }
+        }
+        startTorTransport()
+    }
+
+    private fun retryTor() {
+        torController.stop()
+        startTorTransport()
+    }
+
+    private fun startTorTransport() {
+        var proxyApplied = true
+        tabs.forEach { tab ->
+            tab.browser.loadUrl("about:blank")
+            if (!tab.browser.setProxy(torProxy)) proxyApplied = false
+            tab.browser.loadUrl("about:blank")
+        }
+        if (!proxyApplied) {
+            torState = TorTransportController.State.FAILED
+            updateRoutingBadge()
+            Toast.makeText(this, "Could not apply Tor proxy to every tab. Navigation remains blocked.", Toast.LENGTH_LONG).show()
+            return
+        }
+        torState = TorTransportController.State.STARTING
+        updateRoutingBadge()
+        torController.start()
+    }
+
+    private fun disableTor() {
+        val resumeUrls = tabs.associate { tab ->
+            tab.id to (torPendingUrls[tab.id] ?: tab.browser.url?.takeIf(::isWebUrl).orEmpty())
+        }
+        tabs.forEach { it.browser.loadUrl("about:blank") }
+        val cleared = tabs.all { it.browser.clearProxy() }
+        if (!cleared) {
+            val restored = tabs.all { it.browser.setProxy(torProxy) }
+            torState = if (restored) torController.state else TorTransportController.State.FAILED
+            updateRoutingBadge()
+            Toast.makeText(this, "Could not switch every tab to Direct. Pages remain closed.", Toast.LENGTH_LONG).show()
+            return
+        }
+        torRequested = false
+        torController.stop()
+        torState = TorTransportController.State.OFF
+        updateRoutingBadge()
+        tabs.forEach { tab ->
+            val url = resumeUrls[tab.id].orEmpty()
+            torPendingUrls.remove(tab.id)
+            if (url.isNotBlank()) tab.browser.loadUrl(url)
+        }
+    }
+
+    private fun handleTorState(state: TorTransportController.State) {
+        if (!torRequested && state != TorTransportController.State.OFF) {
+            torState = state
+            updateRoutingBadge()
+            return
+        }
+        torState = state
+        when (state) {
+            TorTransportController.State.CONNECTED -> {
+                val proxiesApplied = tabs.all { it.browser.setProxy(torProxy) }
+                if (!proxiesApplied) {
+                    torState = TorTransportController.State.FAILED
+                    tabs.forEach { it.browser.loadUrl("about:blank") }
+                    Toast.makeText(this, "Tor is up but a tab proxy could not be applied. Navigation remains blocked.", Toast.LENGTH_LONG).show()
+                } else {
+                    tabs.forEach { tab ->
+                        val resumeUrl = torPendingUrls.remove(tab.id)
+                        if (!resumeUrl.isNullOrBlank()) tab.browser.loadUrl(resumeUrl)
+                    }
+                }
+            }
+            TorTransportController.State.FAILED -> {
+                tabs.forEach { tab ->
+                    tab.browser.url?.takeIf(::isWebUrl)?.let { torPendingUrls.putIfAbsent(tab.id, it) }
+                    tab.browser.loadUrl("about:blank")
+                }
+                Toast.makeText(this, "Tor failed or lost its circuit. Pages are paused; Direct was not selected.", Toast.LENGTH_LONG).show()
+            }
+            else -> Unit
+        }
+        updateRoutingBadge()
+        updateChrome()
+    }
+
+    private fun updateRoutingBadge() {
+        status.text = when {
+            !torRequested -> "DIRECT"
+            torState == TorTransportController.State.CONNECTED -> "TOR · CIRCUIT UP"
+            torState == TorTransportController.State.STARTING -> "TOR · CONNECTING"
+            torState == TorTransportController.State.STOPPING -> "TOR · STOPPING"
+            else -> "TOR · FAILED"
+        }
+        torButton.text = when {
+            !torRequested -> "Tor: Off"
+            torState == TorTransportController.State.CONNECTED -> "Tor: On"
+            else -> "Tor: Retry"
+        }
+    }
+
+    private fun isWebUrl(url: String): Boolean =
+        url.startsWith("https://", true) || url.startsWith("http://", true)
 
     private fun showTabs() {
         if (tabs.isEmpty()) return
@@ -465,6 +595,7 @@ class MainActivity : Activity() {
     private fun updateChrome() {
         tabButton.text = "Tabs · ${tabs.size}"
         blockCount.text = "Blocked: ${tabs.sumOf { it.browser.blockedCount }}"
+        updateRoutingBadge()
         val tab = activeTab()
         activeTabLabel.text = tab?.let {
             (if (it.privateMode) "Private · " else "") + it.title
@@ -480,7 +611,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
-        dataStore.saveSession(tabs.filterNot { it.privateMode }.mapNotNull { it.browser.url })
+        if (!torRequested) dataStore.saveSession(tabs.filterNot { it.privateMode }.mapNotNull { it.browser.url })
         tabs.forEach { it.browser.onPause() }
         super.onPause()
     }
@@ -499,6 +630,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (::torController.isInitialized) torController.close()
         tabs.forEach { it.browser.close() }
         tabs.clear()
         super.onDestroy()
