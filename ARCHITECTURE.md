@@ -21,10 +21,10 @@ Status labels are evidence-based. A planned component is not considered implemen
 - [ ] Real-device validation of the new engine integration
 - [ ] Named persistent profiles with independently verified storage isolation
 - [ ] Profile-specific permissions, download state, bookmarks, history and deletion
-- [ ] Tor transport integration
+- [x] Embedded Tor daemon integration through Guardian Project tor-android; circuit state and local SOCKS5 handshake checks
 - [ ] WireGuard integration
-- [ ] Routing policy engine and automatic route enforcement
-- [ ] Fail-closed behavior across tunnel start, crash, network switch and recovery
+- [x] Initial Tor-only route state and navigation gating while Tor is starting or failed\n- [ ] General routing policy engine and automatic route enforcement
+- [ ] Verified network-layer fail-closed behavior across proxy fallback, tunnel crash, network switch and recovery
 - [ ] DNS, IPv6, WebRTC and tunnel-failure leak testing
 - [ ] Filtering audit, list-update pipeline and regression test corpus
 - [ ] Device validation of downloads, bookmarks, history and session restoration
