@@ -19,7 +19,13 @@ android {
     compileSdk = 37
     compileSdkMinor = 1
 
-    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n        isCoreLibraryDesugaringEnabled = true\n    }\n\n    defaultConfig {
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
+    }
+
+    defaultConfig {
         applicationId = "app.orubus.browser"
         minSdk = 29
         targetSdk = 37
@@ -75,7 +81,9 @@ configurations.configureEach {
 dependencies {
     implementation("com.cefrium:cefrium-sdk:0.9.4")
     implementation("info.guardianproject:tor-android:0.4.9.12")
-    implementation("info.guardianproject:jtorctl:0.4.5.7")\n    implementation("com.wireguard.android:tunnel:1.0.20260102")\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    implementation("info.guardianproject:jtorctl:0.4.5.7")
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("androidx.core:core:1.16.0")
