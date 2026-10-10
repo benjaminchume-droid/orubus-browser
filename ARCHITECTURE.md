@@ -21,8 +21,8 @@ Status labels are evidence-based. A planned component is not considered implemen
 - [ ] Real-device validation of the new engine integration
 - [ ] Named persistent profiles with independently verified storage isolation
 - [ ] Profile-specific permissions, download state, bookmarks, history and deletion
-- [x] Embedded Tor daemon integration through Guardian Project tor-android; circuit state and local SOCKS5 handshake checks
-- [ ] WireGuard integration
+- [x] Embedded Tor daemon integration through Guardian Project tor-android; circuit state, SOCKS5 handshake and Tor exit verification
+- [x] WireGuard Android tunnel library integration, full-tunnel config validation, Android Keystore encryption and VPN consent/start/stop UI (CI/device verification pending)
 - [x] Initial Tor-only route state and navigation gating while Tor is starting or failed\n- [ ] General routing policy engine and automatic route enforcement
 - [ ] Verified network-layer fail-closed behavior across proxy fallback, tunnel crash, network switch and recovery
 - [ ] DNS, IPv6, WebRTC and tunnel-failure leak testing
@@ -37,6 +37,10 @@ Orubus uses a prebuilt Chromium engine distributed by Cefrium, which embeds Chro
 **Release risk:** Cefrium's public documentation currently identifies the SDK as pre-1.0/public beta, with a changing API and limited large-scale production deployment. The engine migration is implemented in source but must not be considered verified until CI and supported physical devices pass. Pinning a dependency does not itself guarantee timely security updates. Track Chromium/CEF upstream security releases, update the SDK deliberately, and test each engine upgrade before release.
 
 The engine increases app size and requires a modern Android toolchain. Current SDK requirements are JDK 25, Gradle 9.7.1, Android Gradle Plugin 9.4, compile SDK 37, and Android API 29 or newer, following the SDK quickstart.
+
+## WireGuard current behavior
+
+The WireGuard Android tunnel library is integrated in source. The UI accepts a pasted provider configuration, parses it using the upstream config parser, requires IPv4 and IPv6 default routes, rejects app-specific include/exclude routing, encrypts the config with AES-GCM using an Android Keystore key, requests Android VPN consent, and controls the userspace backend. See docs/WIREGUARD_INTEGRATION.md. The app does not provision VPN servers or credentials and does not silently enable Android Always-on VPN / Block connections without VPN. CI build validation and physical-device routing/leak tests remain required.
 
 ## Routing design target
 
