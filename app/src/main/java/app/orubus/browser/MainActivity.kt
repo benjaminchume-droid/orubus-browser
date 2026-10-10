@@ -84,15 +84,14 @@ class MainActivity : Activity() {
                     updateRoutingBadge()
                     updateChrome()
                     if (state == WireGuardTransportController.State.FAILED) {
-                        Toast.makeText(this, message ?: wireGuardController.error ?: "WireGuard failed.", Toast.LENGTH_LONG).show()
-                    } else if (state == WireGuardTransportController.State.CONNECTED) {
-                        resumeProtectedTabs()
-                        Toast.makeText(this, "WireGuard tunnel is active. Verify your provider route and Android VPN lockdown settings.", Toast.LENGTH_LONG).show()
-                    } else if (state == WireGuardTransportController.State.FAILED) {
                         tabs.forEach { tab ->
                             tab.browser.url?.takeIf(::isWebUrl)?.let { wireGuardPendingUrls.putIfAbsent(tab.id, it) }
                             tab.browser.loadUrl("about:blank")
                         }
+                        Toast.makeText(this, message ?: wireGuardController.error ?: "WireGuard failed. Navigation remains blocked until you retry or disable WireGuard routing.", Toast.LENGTH_LONG).show()
+                    } else if (state == WireGuardTransportController.State.CONNECTED) {
+                        resumeProtectedTabs()
+                        Toast.makeText(this, "WireGuard tunnel is active. Verify your provider route and Android VPN lockdown settings.", Toast.LENGTH_LONG).show()
                     } else if (state == WireGuardTransportController.State.CONFIGURED && !wireGuardRequested) {
                         resumeProtectedTabs()
                     }
@@ -622,10 +621,12 @@ class MainActivity : Activity() {
                             when (which) {
                                 0 -> requestWireGuardStart()
                                 1 -> showWireGuardConfigDialog()
-                                2 -> if (wireGuardRequested) disableWireGuardRouting() else AlertDialog.Builder(this).setTitle("Remove configuration?")
+                                2 -> AlertDialog.Builder(this).setTitle("Remove configuration?")
                                     .setMessage("The encrypted local configuration, including its private key, will be deleted.")
-                                    .setPositiveButton("Remove") { _, _ -> runCatching { wireGuardController.removeConfig() }
-                                        .onFailure { Toast.makeText(this, it.message ?: "Could not remove config", Toast.LENGTH_LONG).show() }
+                                    .setPositiveButton("Remove") { _, _ ->
+                                        if (wireGuardRequested) disableWireGuardRouting()
+                                        else runCatching { wireGuardController.removeConfig() }
+                                            .onFailure { Toast.makeText(this, it.message ?: "Could not remove config", Toast.LENGTH_LONG).show() }
                                     }.setNegativeButton("Cancel", null).show()
                                 3 -> disableWireGuardRouting()
                             }
