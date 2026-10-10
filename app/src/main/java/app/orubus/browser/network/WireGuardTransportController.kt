@@ -158,6 +158,9 @@ class WireGuardTransportController(
         require(iface.includedApplications.isEmpty() && iface.excludedApplications.isEmpty()) {
             "Application-specific routing is not accepted. Remove IncludedApplications and ExcludedApplications."
         }
+        require(iface.dnsServers.isNotEmpty()) {
+            "A DNS server is required for the full-tunnel profile. Add a DNS = address to the [Interface] section."
+        }
         val hasIpv4Default = config.peers.any { peer ->
             peer.allowedIps.any { it.mask == 0 && it.address.address.size == 4 }
         }
