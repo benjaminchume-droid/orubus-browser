@@ -17,7 +17,8 @@ Status labels are evidence-based. A planned component is not considered implemen
 - [x] Off-the-record private tabs through the engine's incognito request context
 - [x] Honest privacy status for features that remain unimplemented
 - [x] Stable release signing configuration and release workflow scaffold
-- [ ] Successful CI build and real-device validation of the new engine integration
+- [x] Successful GitHub Actions debug APK build and JVM navigation unit tests (commit 9f75a603)
+- [ ] Real-device validation of the new engine integration
 - [ ] Named persistent profiles with independently verified storage isolation
 - [ ] Profile-specific permissions, download state, bookmarks, history and deletion
 - [ ] Tor transport integration
