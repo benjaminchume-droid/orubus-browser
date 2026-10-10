@@ -1,6 +1,11 @@
 package app.orubus.browser
 
 import android.app.Activity
+import android.content.Intent
+import android.os.Environment
+import java.io.File
+import app.orubus.browser.navigation.UrlResolver
+import app.orubus.browser.storage.BrowserDataStore
 import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
@@ -27,6 +32,8 @@ class MainActivity : Activity() {
     private val cosmic = Color.rgb(35, 33, 44)
     private val vanilla = Color.rgb(241, 254, 203)
     private val ink = Color.rgb(31, 31, 37)
+    private val dataStore by lazy { BrowserDataStore(applicationContext) }
+    private val downloads = linkedMapOf<Int, CefriumBrowser.DownloadItem>()
 
     private data class BrowserTab(
         val id: Int,
@@ -55,7 +62,9 @@ class MainActivity : Activity() {
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         }
         buildUi()
-        createTab("https://www.google.com", privateMode = false)
+        val restored = dataStore.restoreSession()
+        if (restored.isEmpty()) createTab("https://duckduckgo.com/", privateMode = false)
+        else restored.forEach { createTab(it, privateMode = false) }
     }
 
     private fun buildUi() {
@@ -122,13 +131,26 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        actions.addView(button("Back") { activeTab()?.browser?.let { if (it.canGoBack()) it.goBack() } })
+        actions.addView(button("Forward") { activeTab()?.browser?.let { if (it.canGoForward()) it.goForward() } })
+        actions.addView(button("Reload") { activeTab()?.browser?.reload() })
+        actions.addView(button("Home") { navigate("https://duckduckgo.com/") })
         tabButton = button("Tabs · 0") { showTabs() }
         actions.addView(tabButton)
-        actions.addView(button("+") { createTab("about:blank", privateMode = false) })
-        actions.addView(button("Private") { createTab("about:blank", privateMode = true) })
+        actions.addView(button("+") { createTab("https://duckduckgo.com/", privateMode = false) })
+        actions.addView(button("Private") { createTab("https://duckduckgo.com/", privateMode = true) })
+        actions.addView(button("Save") { toggleCurrentBookmark() })
+        actions.addView(button("Marks") { showBookmarks() })
+        actions.addView(button("History") { showHistory() })
+        actions.addView(button("Files") { showDownloads() })
+        actions.addView(button("Find") { showFind() })
+        actions.addView(button("Share") { shareCurrentPage() })
         actions.addView(button("Privacy") { showPrivacy() })
-        actions.addView(button("Profiles") { showProfileStatus() })
-        root.addView(actions, LinearLayout.LayoutParams(-1, dp(46)).apply {
+        val actionScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(actions)
+        }
+        root.addView(actionScroll, LinearLayout.LayoutParams(-1, dp(46)).apply {
             topMargin = dp(5)
         })
 
@@ -181,17 +203,20 @@ class MainActivity : Activity() {
 
     private fun createTab(initialUrl: String, privateMode: Boolean) {
         val browser = CefriumBrowser.createWithSurface(this, privateMode)
+        browser.setPullToRefreshEnabled(true)
         val tab = BrowserTab(nextTabId++, browser, privateMode)
         tabs.add(tab)
 
         browser.setOnUrlChangedListener { url ->
             runOnUiThread {
                 if (activeTab()?.id == tab.id) address.setText(url ?: "")
+                if (!tab.privateMode && !url.isNullOrBlank()) dataStore.recordVisit(tab.title, url)
             }
         }
         browser.setOnTitleChangedListener { title ->
             runOnUiThread {
                 tab.title = title?.takeIf { it.isNotBlank() } ?: "Untitled"
+                if (!tab.privateMode) tab.browser.url?.let { dataStore.recordVisit(tab.title, it) }
                 updateChrome()
             }
         }
@@ -218,21 +243,9 @@ class MainActivity : Activity() {
         tabs.firstOrNull { it.browser.surfaceContainer.visibility == View.VISIBLE }
 
     private fun navigate(raw: String) {
-        val value = raw.trim()
-        if (value.isEmpty()) return
-        val target = when {
-            value.startsWith("about:") -> value
-            value.matches(Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:.*")) -> value
-            value.contains(".") && !value.contains(" ") -> "https://$value"
-            else -> "https://www.google.com/search?q=" + URLEncoder.encode(value, "UTF-8")
-        }
-        if (!target.startsWith("https://") && !target.startsWith("http://") &&
-            !target.startsWith("about:")
-        ) {
-            Toast.makeText(this, "Only web and about: URLs are supported.", Toast.LENGTH_SHORT).show()
-            return
-        }
+        val target = UrlResolver.resolve(raw) ?: return
         activeTab()?.browser?.loadUrl(target)
+        address.clearFocus()
     }
 
     private fun showTabs() {
@@ -318,6 +331,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        dataStore.saveSession(tabs.filterNot { it.privateMode }.mapNotNull { it.browser.url })
         tabs.forEach { it.browser.onPause() }
         super.onPause()
     }
