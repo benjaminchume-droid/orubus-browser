@@ -39,6 +39,8 @@ class MainActivity : Activity() {
     private lateinit var torController: TorTransportController
     private lateinit var wireGuardController: WireGuardTransportController
     private var wireGuardState = WireGuardTransportController.State.OFF
+    private var wireGuardRequested = false
+    private val wireGuardPendingUrls = linkedMapOf<Int, String>()
     private var wireGuardPendingPermission = false
     private var torState = TorTransportController.State.OFF
     private var torRequested = false
@@ -84,12 +86,21 @@ class MainActivity : Activity() {
                     if (state == WireGuardTransportController.State.FAILED) {
                         Toast.makeText(this, message ?: wireGuardController.error ?: "WireGuard failed.", Toast.LENGTH_LONG).show()
                     } else if (state == WireGuardTransportController.State.CONNECTED) {
+                        resumeProtectedTabs()
                         Toast.makeText(this, "WireGuard tunnel is active. Verify your provider route and Android VPN lockdown settings.", Toast.LENGTH_LONG).show()
+                    } else if (state == WireGuardTransportController.State.FAILED) {
+                        tabs.forEach { tab ->
+                            tab.browser.url?.takeIf(::isWebUrl)?.let { wireGuardPendingUrls.putIfAbsent(tab.id, it) }
+                            tab.browser.loadUrl("about:blank")
+                        }
+                    } else if (state == WireGuardTransportController.State.CONFIGURED && !wireGuardRequested) {
+                        resumeProtectedTabs()
                     }
                 }
             }
         }
-        wireGuardState = if (wireGuardController.hasSavedConfig()) WireGuardTransportController.State.CONFIGURED else WireGuardTransportController.State.OFF
+        wireGuardState = wireGuardController.state
+        wireGuardRequested = wireGuardState == WireGuardTransportController.State.CONNECTED
         val restored = dataStore.restoreSession()
         if (restored.isEmpty()) createTab("https://duckduckgo.com/", privateMode = false)
         else restored.forEach { createTab(it, privateMode = false) }
@@ -296,7 +307,7 @@ class MainActivity : Activity() {
         })
         webContainer.addView(browser.surfaceContainer, FrameLayout.LayoutParams(-1, -1))
         activate(tab)
-        browser.loadUrl(if (torRequested && torState != TorTransportController.State.CONNECTED) "about:blank" else initialUrl)
+        browser.loadUrl(if ((torRequested && torState != TorTransportController.State.CONNECTED) || (wireGuardRequested && wireGuardState != WireGuardTransportController.State.CONNECTED)) "about:blank" else initialUrl)
         updateChrome()
     }
 
@@ -321,6 +332,10 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Tor is not connected. Navigation is blocked.", Toast.LENGTH_LONG).show()
             return
         }
+        if (wireGuardRequested && wireGuardState != WireGuardTransportController.State.CONNECTED) {
+            Toast.makeText(this, "WireGuard is not connected. Navigation is blocked.", Toast.LENGTH_LONG).show()
+            return
+        }
         activeTab()?.browser?.loadUrl(target)
         address.clearFocus()
     }
@@ -336,7 +351,7 @@ class MainActivity : Activity() {
     private fun enableTor() {
         torRequested = true
         tabs.forEach { tab ->
-            tab.browser.url?.takeIf(::isWebUrl)?.let { torPendingUrls[tab.id] = it }
+            (tab.browser.url?.takeIf(::isWebUrl) ?: wireGuardPendingUrls[tab.id])?.let { torPendingUrls.putIfAbsent(tab.id, it) }
         }
         startTorTransport()
     }
@@ -366,7 +381,7 @@ class MainActivity : Activity() {
 
     private fun disableTor() {
         val resumeUrls = tabs.associate { tab ->
-            tab.id to (torPendingUrls[tab.id] ?: tab.browser.url?.takeIf(::isWebUrl).orEmpty())
+            tab.id to (torPendingUrls[tab.id] ?: wireGuardPendingUrls[tab.id] ?: tab.browser.url?.takeIf(::isWebUrl).orEmpty())
         }
         tabs.forEach { it.browser.loadUrl("about:blank") }
         val cleared = tabs.all { it.browser.clearProxy() }
@@ -381,11 +396,8 @@ class MainActivity : Activity() {
         torController.stop()
         torState = TorTransportController.State.OFF
         updateRoutingBadge()
-        tabs.forEach { tab ->
-            val url = resumeUrls[tab.id].orEmpty()
-            torPendingUrls.remove(tab.id)
-            if (url.isNotBlank()) tab.browser.loadUrl(url)
-        }
+        resumeUrls.forEach { (id, url) -> if (url.isNotBlank()) torPendingUrls[id] = url }
+        resumeProtectedTabs()
     }
 
     private fun handleTorState(state: TorTransportController.State) {
@@ -402,12 +414,7 @@ class MainActivity : Activity() {
                     torState = TorTransportController.State.FAILED
                     tabs.forEach { it.browser.loadUrl("about:blank") }
                     Toast.makeText(this, "Tor is up but a tab proxy could not be applied. Navigation remains blocked.", Toast.LENGTH_LONG).show()
-                } else {
-                    tabs.forEach { tab ->
-                        val resumeUrl = torPendingUrls.remove(tab.id)
-                        if (!resumeUrl.isNullOrBlank()) tab.browser.loadUrl(resumeUrl)
-                    }
-                }
+                } else resumeProtectedTabs()
             }
             TorTransportController.State.FAILED -> {
                 tabs.forEach { tab ->
@@ -603,7 +610,7 @@ class MainActivity : Activity() {
             WireGuardTransportController.State.CONNECTED -> {
                 AlertDialog.Builder(this).setTitle("WireGuard connected")
                     .setMessage("The WireGuard userspace tunnel is active. Disconnecting may return device traffic to the normal network unless Android Always-on VPN lockdown is enabled.")
-                    .setPositiveButton("Disconnect") { _, _ -> wireGuardController.stop() }
+                    .setPositiveButton("Disconnect") { _, _ -> disableWireGuardRouting() }
                     .setNegativeButton("Cancel", null).show()
             }
             WireGuardTransportController.State.CONNECTING, WireGuardTransportController.State.STOPPING ->
@@ -611,15 +618,16 @@ class MainActivity : Activity() {
             else -> {
                 if (wireGuardController.hasSavedConfig()) {
                     AlertDialog.Builder(this).setTitle("WireGuard")
-                        .setItems(arrayOf("Connect", "Edit configuration", "Remove saved configuration")) { _, which ->
+                        .setItems(if (wireGuardRequested) arrayOf("Connect / retry", "Edit configuration", "Remove saved configuration", "Disable WireGuard routing and use the remaining route") else arrayOf("Connect", "Edit configuration", "Remove saved configuration")) { _, which ->
                             when (which) {
                                 0 -> requestWireGuardStart()
                                 1 -> showWireGuardConfigDialog()
-                                2 -> AlertDialog.Builder(this).setTitle("Remove configuration?")
+                                2 -> if (wireGuardRequested) disableWireGuardRouting() else AlertDialog.Builder(this).setTitle("Remove configuration?")
                                     .setMessage("The encrypted local configuration, including its private key, will be deleted.")
                                     .setPositiveButton("Remove") { _, _ -> runCatching { wireGuardController.removeConfig() }
                                         .onFailure { Toast.makeText(this, it.message ?: "Could not remove config", Toast.LENGTH_LONG).show() }
                                     }.setNegativeButton("Cancel", null).show()
+                                3 -> disableWireGuardRouting()
                             }
                         }.setNegativeButton("Cancel", null).show()
                 } else showWireGuardConfigDialog()
@@ -667,12 +675,42 @@ class MainActivity : Activity() {
     }
 
     private fun requestWireGuardStart() {
+        wireGuardRequested = true
+        tabs.forEach { tab ->
+            (tab.browser.url?.takeIf(::isWebUrl) ?: torPendingUrls[tab.id])?.let { wireGuardPendingUrls.putIfAbsent(tab.id, it) }
+            tab.browser.loadUrl("about:blank")
+        }
+        updateRoutingBadge()
         val consent = wireGuardController.permissionIntent()
         if (consent != null) {
             wireGuardPendingPermission = true
             @Suppress("DEPRECATION")
             startActivityForResult(consent, REQUEST_WIREGUARD_PERMISSION)
         } else wireGuardController.start()
+    }
+
+    private fun disableWireGuardRouting() {
+        tabs.forEach { tab ->
+            (wireGuardPendingUrls[tab.id] ?: torPendingUrls[tab.id] ?: tab.browser.url?.takeIf(::isWebUrl))?.let { wireGuardPendingUrls.putIfAbsent(tab.id, it) }
+            tab.browser.loadUrl("about:blank")
+        }
+        wireGuardRequested = false
+        if (wireGuardState == WireGuardTransportController.State.CONNECTED || wireGuardState == WireGuardTransportController.State.CONNECTING || wireGuardState == WireGuardTransportController.State.FAILED) {
+            wireGuardController.stop()
+        } else resumeProtectedTabs()
+        updateRoutingBadge()
+    }
+
+    private fun canResumeProtectedTabs(): Boolean =
+        (!torRequested || torState == TorTransportController.State.CONNECTED) &&
+            (!wireGuardRequested || wireGuardState == WireGuardTransportController.State.CONNECTED)
+
+    private fun resumeProtectedTabs() {
+        if (!canResumeProtectedTabs()) return
+        tabs.forEach { tab ->
+            val url = wireGuardPendingUrls.remove(tab.id) ?: torPendingUrls.remove(tab.id)
+            if (!url.isNullOrBlank()) tab.browser.loadUrl(url)
+        }
     }
 
     private fun showPrivacy() {
