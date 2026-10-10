@@ -43,6 +43,7 @@ class TorTransportController(
 
     @Volatile private var torService: TorService? = null
     @Volatile private var currentState = State.OFF
+    @Volatile private var closed = false
     private var bound = false
     private var receiverRegistered = false
     private var pollTask: ScheduledFuture<*>? = null
@@ -87,7 +88,7 @@ class TorTransportController(
 
     @Synchronized
     fun start() {
-        if (currentState == State.STARTING || currentState == State.CONNECTED) return
+        if (closed || currentState == State.STARTING || currentState == State.CONNECTED) return
         transition(State.STARTING)
         startDeadlineMs = System.currentTimeMillis() + START_TIMEOUT_MS
         try {
@@ -139,6 +140,7 @@ class TorTransportController(
     }
 
     fun close() {
+        closed = true
         stop()
         executor.shutdownNow()
     }
@@ -165,11 +167,11 @@ class TorTransportController(
     }
 
     private fun scheduleVerification(delayMs: Long) {
-        if (currentState == State.OFF || currentState == State.STOPPING) return
+        if (closed || currentState == State.OFF || currentState == State.STOPPING) return
         pollTask?.cancel(false)
-        pollTask = executor.schedule({
-            verifyTransport()
-        }, delayMs, TimeUnit.MILLISECONDS)
+        pollTask = runCatching {
+            executor.schedule({ verifyTransport() }, delayMs, TimeUnit.MILLISECONDS)
+        }.getOrNull()
     }
 
     private fun verifyNow() = scheduleVerification(0)
