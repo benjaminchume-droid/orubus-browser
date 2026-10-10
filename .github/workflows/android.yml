@@ -55,13 +55,55 @@ jobs:
           test -f app/build.gradle.kts
           ! grep -R "android.webkit.WebView" app/src/main/java
 
-      - name: Build debug APK
+      - name: Build debug APKs and run tests
         run: gradle --no-daemon testDebugUnitTest assembleDebug
 
-      - name: Upload debug APK
+      - name: Audit APK contents and sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build-reports
+          REPORT="$GITHUB_WORKSPACE/build-reports/apk-size-report.txt"
+          {
+            echo "Orubus Browser APK size audit"
+            echo "Commit: $GITHUB_SHA"
+            echo "Generated: $(date -u +%FT%TZ)"
+            echo
+            find app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' -type f -print0 |
+              sort -z | while IFS= read -r -d '' apk; do
+                echo "============================================================"
+                echo "APK: $(basename "$apk")"
+                stat --printf='File size: %s bytes (%n)\n' "$apk"
+                echo "Largest ZIP entries (uncompressed bytes | compressed bytes | path):"
+                python3 - "$apk" <<'PY'
+          import sys, zipfile
+          path = sys.argv[1]
+          with zipfile.ZipFile(path) as z:
+              rows = sorted(z.infolist(), key=lambda x: x.file_size, reverse=True)
+              for item in rows[:25]:
+                  print(f"{item.file_size:>14} | {item.compress_size:>14} | {item.filename}")
+              native = [x for x in z.infolist() if x.filename.endswith('.so')]
+              print()
+              print("Native libraries by ABI (uncompressed bytes):")
+              totals = {}
+              for item in native:
+                  parts = item.filename.split('/')
+                  abi = parts[1] if len(parts) > 2 and parts[0] == 'lib' else 'other'
+                  totals[abi] = totals.get(abi, 0) + item.file_size
+              for abi, size in sorted(totals.items()):
+                  print(f"{abi}: {size} bytes")
+          PY
+                echo
+              done
+          } | tee "$REPORT"
+          test -s "$REPORT"
+
+      - name: Upload debug APKs and size audit
         uses: actions/upload-artifact@v4
         with:
-          name: orubus-browser-chromium-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: orubus-browser-chromium-debug-apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            build-reports/apk-size-report.txt
           if-no-files-found: error
           retention-days: 14
