@@ -10,9 +10,9 @@ Tor, WireGuard, automatic routing, verified fail-closed enforcement, and DNS/IPv
 
 ## Network and local data
 
-Websites visited by the user receive the network requests and information inherent to normal web browsing. Search terms entered without a URL are sent to the search provider configured in the current application code.
+Websites visited by the user receive the network requests and information inherent to normal web browsing. Search terms entered without a URL are sent to DuckDuckGo. Download requests require user confirmation; approved downloads are written to the app-specific Downloads directory and the current download list is held in memory for the app session. Downloads are not currently persisted in a durable download database.
 
-Normal browser tabs use the engine's normal browsing context. Named persistent profiles with independently verified storage separation and a full data-retention/deletion interface have not been implemented. Do not treat normal tabs as isolated identities.
+Normal browser tabs use the engine's normal browsing context. Orubus stores bookmarks, up to 500 recent normal-history entries, and normal-tab URLs for session restoration in app-private SharedPreferences. Private-tab URLs are excluded from browser-owned history and session restoration, and saving a bookmark from a private tab is disabled. Clearing the saved history list does not clear cookies, cache, or other engine storage. Named persistent profiles with independently verified storage separation and a complete data-deletion interface have not been implemented. Do not treat normal tabs as isolated identities.
 
 ## Engine supply chain
 
