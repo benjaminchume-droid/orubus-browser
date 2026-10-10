@@ -13,6 +13,9 @@ import org.torproject.jni.TorService
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.nio.charset.StandardCharsets
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -173,13 +176,17 @@ class TorTransportController(
             service.getInfo("status/circuit-established")?.trim() == "1"
         }.getOrDefault(false)
         val socksReady = port == SOCKS_PORT && verifySocksHandshake(port)
+        // A local SOCKS handshake alone only proves the listener exists. The
+        // end-to-end check asks Tor Project's check endpoint through SOCKS and
+        // requires its IsTor=true response before showing the route as verified.
+        val torExitVerified = circuitEstablished && socksReady && verifyTorExit(port)
 
         when {
-            circuitEstablished && socksReady -> transition(State.CONNECTED)
+            torExitVerified -> transition(State.CONNECTED)
             currentState == State.CONNECTED -> transition(State.FAILED)
             System.currentTimeMillis() >= startDeadlineMs -> transition(State.FAILED)
         }
-        scheduleVerification(POLL_INTERVAL_MS)
+        scheduleVerification(if (currentState == State.CONNECTED) CONNECTED_POLL_INTERVAL_MS else POLL_INTERVAL_MS)
     }
 
     private fun verifySocksHandshake(port: Int): Boolean = try {
@@ -196,6 +203,61 @@ class TorTransportController(
         false
     }
 
+    /**
+     * Makes a TLS request through SOCKS5 using a domain-name CONNECT target, so
+     * the destination hostname is sent to Tor rather than resolved by Android.
+     * The response must explicitly identify the observed exit as a Tor exit.
+     */
+    private fun verifyTorExit(port: Int): Boolean = try {
+        val host = "check.torproject.org"
+        Socket().use { raw ->
+            raw.connect(InetSocketAddress("127.0.0.1", port), SOCKET_TIMEOUT_MS)
+            raw.soTimeout = EXIT_CHECK_TIMEOUT_MS
+            val input = raw.getInputStream()
+            val output = raw.getOutputStream()
+            output.write(byteArrayOf(0x05, 0x01, 0x00))
+            output.flush()
+            if (input.read() != 0x05 || input.read() != 0x00) return false
+
+            val hostBytes = host.toByteArray(StandardCharsets.US_ASCII)
+            output.write(byteArrayOf(0x05, 0x01, 0x00, 0x03, hostBytes.size.toByte()) +
+                hostBytes + byteArrayOf(0x01, 0xBB.toByte()))
+            output.flush()
+
+            val version = input.read()
+            val reply = input.read()
+            input.read() // reserved
+            val addressType = input.read()
+            if (version != 0x05 || reply != 0x00) return false
+            when (addressType) {
+                0x01 -> repeat(4) { if (input.read() < 0) return false }
+                0x03 -> {
+                    val length = input.read()
+                    if (length < 0) return false
+                    repeat(length) { if (input.read() < 0) return false }
+                }
+                0x04 -> repeat(16) { if (input.read() < 0) return false }
+                else -> return false
+            }
+            if (input.read() < 0 || input.read() < 0) return false // bound port
+
+            val tls = SSLSocketFactory.getDefault().createSocket(raw, host, 443, true) as SSLSocket
+            tls.use { secure ->
+                secure.soTimeout = EXIT_CHECK_TIMEOUT_MS
+                secure.startHandshake()
+                val request = "GET /api/ip HTTP/1.0\r\n" +
+                    "Host: $host\r\nConnection: close\r\nUser-Agent: OrubusTorVerifier/1\r\n\r\n"
+                secure.getOutputStream().write(request.toByteArray(StandardCharsets.US_ASCII))
+                secure.getOutputStream().flush()
+                val response = secure.getInputStream().bufferedReader(StandardCharsets.UTF_8).readText()
+                val body = response.substringAfter("\r\n\r\n", "")
+                Regex("\\\"IsTor\\\"\\s*:\\s*true", RegexOption.IGNORE_CASE).containsMatchIn(body)
+            }
+        }
+    } catch (_: Exception) {
+        false
+    }
+
     private fun transition(next: State) {
         if (currentState == next) return
         currentState = next
@@ -206,6 +268,8 @@ class TorTransportController(
         const val SOCKS_PORT = 39050
         private const val SOCKET_TIMEOUT_MS = 1_500
         private const val POLL_INTERVAL_MS = 2_000L
+        private const val CONNECTED_POLL_INTERVAL_MS = 30_000L
+        private const val EXIT_CHECK_TIMEOUT_MS = 8_000
         private const val START_TIMEOUT_MS = 180_000L
     }
 }
