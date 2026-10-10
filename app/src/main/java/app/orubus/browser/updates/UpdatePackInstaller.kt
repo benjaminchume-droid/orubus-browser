@@ -7,6 +7,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 import javax.net.ssl.HttpsURLConnection
 
@@ -31,7 +32,7 @@ class UpdatePackInstaller(context: Context) {
         deleteRecursively(staging)
         try {
             downloadPack(pack, download)
-            check(UpdateManifestVerifier.sha256Hex(download.readBytes()).equals(pack.sha256, true)) {
+            check(sha256File(download).equals(pack.sha256, true)) {
                 "Update pack SHA-256 does not match the signed manifest."
             }
             staging.mkdirs()
@@ -88,7 +89,7 @@ class UpdatePackInstaller(context: Context) {
         }
     }
 
-    private fun extractSafely(archive: File, destination: File, maxExpandedBytes: Long) {
+    private fun sha256File(file: File): String {\n        val digest = MessageDigest.getInstance("SHA-256")\n        file.inputStream().buffered().use { input ->\n            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)\n            while (true) {\n                val read = input.read(buffer)\n                if (read < 0) break\n                digest.update(buffer, 0, read)\n            }\n        }\n        return digest.digest().joinToString("") { "%02x".format(it) }\n    }\n\n    private fun extractSafely(archive: File, destination: File, maxExpandedBytes: Long) {
         var expanded = 0L
         var entries = 0
         ZipInputStream(BufferedInputStream(archive.inputStream())).use { zip ->
